@@ -8,8 +8,8 @@ psycopg2-binary==2.9.9
 # Vector Store (IMPORTANT: Pin to 0.4.x for Vanna compatibility)
 chromadb==0.4.24
 
-# LLM & Embeddings
-openai==1.51.0
+# LLM & Embeddings (Pin OpenAI to 1.3.x for Vanna 0.7.9 compatibility)
+openai==1.3.9
 huggingface-hub==0.25.0
 
 # API Server
