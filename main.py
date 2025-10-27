@@ -13,6 +13,7 @@ Endpoints:
     POST /train/sql - Train với SQL examples
     POST /generate_sql - Generate SQL từ question
     POST /execute_sql - Execute SQL và trả về kết quả
+    POST /generate_chart - Generate Plotly chart từ question
     POST /ask - All-in-one (generate + execute)
     GET /health - Health check
     GET /training_data - Get training data
@@ -180,6 +181,14 @@ class GenerateSQLRequest(BaseModel):
 class ExecuteSQLRequest(BaseModel):
     """Request để execute SQL"""
     sql: str
+
+
+class GenerateChartRequest(BaseModel):
+    """Request để generate chart từ SQL hoặc question"""
+    question: str
+    sql: Optional[str] = None
+    dark_mode: Optional[bool] = False
+    custom_instructions: Optional[str] = None
 
 
 class SuccessResponse(BaseModel):
@@ -510,6 +519,94 @@ async def ask_question(request: GenerateSQLRequest):
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(e)}")
+
+
+@app.post("/generate_chart", response_model=SuccessResponse)
+async def generate_chart(request: GenerateChartRequest):
+    """
+    Generate Plotly chart from question or SQL
+    
+    Tạo biểu đồ Plotly từ câu hỏi hoặc SQL query.
+    Trả về chart dạng JSON có thể render trong frontend.
+    
+    Example:
+    ```json
+    {
+        "question": "Top 10 khách hàng có doanh thu cao nhất",
+        "dark_mode": false,
+        "custom_instructions": "Use blue gradient colors and show data labels"
+    }
+    ```
+    
+    Response includes:
+    - chart_json: Plotly figure JSON (for rendering)
+    - chart_html: Full HTML (for iframe/embed)
+    - sql: SQL query used
+    - row_count: Number of data points
+    - data: First 10 rows of data
+    """
+    vn = vanna_service.get_instance()
+    
+    try:
+        # Generate SQL if not provided
+        if request.sql:
+            sql = request.sql
+        else:
+            sql = vn.generate_sql(request.question)
+        
+        # Execute SQL
+        df = vn.run_sql(sql)
+        
+        # Check if data is suitable for chart
+        if not vn.should_generate_chart(df):
+            return SuccessResponse(
+                success=False,
+                message="Data is not suitable for chart visualization (need at least 2 rows and numeric columns)",
+                data={
+                    "sql": sql,
+                    "row_count": len(df),
+                    "data": df.to_dict(orient='records')
+                }
+            )
+        
+        # Build question with custom instructions
+        chart_question = request.question
+        if request.custom_instructions:
+            chart_question = f"{request.question}. {request.custom_instructions}"
+        
+        # Generate Plotly code
+        plotly_code = vn.generate_plotly_code(
+            question=chart_question,
+            sql=sql,
+            df_metadata=f"Running df.dtypes gives:\n{df.dtypes}"
+        )
+        
+        # Create Plotly figure
+        fig = vn.get_plotly_figure(
+            plotly_code=plotly_code,
+            df=df,
+            dark_mode=request.dark_mode
+        )
+        
+        # Convert to JSON and HTML
+        chart_json = fig.to_json()
+        chart_html = fig.to_html(include_plotlyjs='cdn')
+        
+        return SuccessResponse(
+            success=True,
+            message="Chart generated successfully",
+            data={
+                "chart_json": chart_json,
+                "chart_html": chart_html,
+                "sql": sql,
+                "row_count": len(df),
+                "data": df.head(10).to_dict(orient='records'),
+                "plotly_code": plotly_code
+            }
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate chart: {str(e)}")
 
 
 @app.get("/training_data", response_model=SuccessResponse)
