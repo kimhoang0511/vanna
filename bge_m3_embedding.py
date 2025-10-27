@@ -29,7 +29,8 @@ class BGE_M3_EmbeddingFunction:
             raise ValueError("HUGGINGFACE_API_KEY not found. Set it as environment variable or pass as parameter.")
         
         self.model_name = model_name
-        self.client = InferenceClient(api_key=self.api_key)
+        # InferenceClient accepts 'token' parameter, not 'api_key'
+        self.client = InferenceClient(token=self.api_key)
         print(f"✅ Initialized {model_name} with InferenceClient")
     
     def __call__(self, input: List[str]) -> List[List[float]]:
