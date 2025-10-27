@@ -13,7 +13,8 @@ Endpoints:
     POST /train/sql - Train với SQL examples
     POST /generate_sql - Generate SQL từ question
     POST /execute_sql - Execute SQL và trả về kết quả
-    POST /generate_chart - Generate Plotly chart từ question
+    POST /generate_chart - Generate Plotly chart (JSON, HTML, PNG, JPG, PDF)
+    GET /download_chart/{format} - Download chart as file
     POST /ask - All-in-one (generate + execute)
     GET /health - Health check
     GET /training_data - Get training data
@@ -21,10 +22,13 @@ Endpoints:
 
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import pandas as pd
 import os
+import base64
+import io
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -189,6 +193,9 @@ class GenerateChartRequest(BaseModel):
     sql: Optional[str] = None
     dark_mode: Optional[bool] = False
     custom_instructions: Optional[str] = None
+    export_format: Optional[str] = "json"  # json, html, png, jpg, pdf
+    image_width: Optional[int] = 1200
+    image_height: Optional[int] = 800
 
 
 class SuccessResponse(BaseModel):
@@ -521,26 +528,37 @@ async def ask_question(request: GenerateSQLRequest):
         raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(e)}")
 
 
-@app.post("/generate_chart", response_model=SuccessResponse)
+@app.post("/generate_chart")
 async def generate_chart(request: GenerateChartRequest):
     """
     Generate Plotly chart from question or SQL
     
     Tạo biểu đồ Plotly từ câu hỏi hoặc SQL query.
-    Trả về chart dạng JSON có thể render trong frontend.
+    Có thể export sang nhiều formats: JSON, HTML, PNG, JPG, PDF
     
     Example:
     ```json
     {
         "question": "Top 10 khách hàng có doanh thu cao nhất",
         "dark_mode": false,
-        "custom_instructions": "Use blue gradient colors and show data labels"
+        "custom_instructions": "Use blue gradient colors and show data labels",
+        "export_format": "jpg",
+        "image_width": 1200,
+        "image_height": 800
     }
     ```
     
+    Supported formats:
+    - json: Plotly JSON (for interactive rendering)
+    - html: Full HTML page
+    - png: PNG image (static)
+    - jpg: JPEG image (static)
+    - pdf: PDF document (static)
+    
     Response includes:
-    - chart_json: Plotly figure JSON (for rendering)
-    - chart_html: Full HTML (for iframe/embed)
+    - chart_json: Plotly figure JSON (if format=json)
+    - chart_html: Full HTML (if format=html)
+    - chart_image_base64: Base64 encoded image (if format=png/jpg/pdf)
     - sql: SQL query used
     - row_count: Number of data points
     - data: First 10 rows of data
@@ -588,22 +606,132 @@ async def generate_chart(request: GenerateChartRequest):
             dark_mode=request.dark_mode
         )
         
-        # Convert to JSON and HTML
-        chart_json = fig.to_json()
-        chart_html = fig.to_html(include_plotlyjs='cdn')
+        # Prepare response data
+        response_data = {
+            "sql": sql,
+            "row_count": len(df),
+            "data": df.head(10).to_dict(orient='records'),
+            "plotly_code": plotly_code,
+            "export_format": request.export_format
+        }
+        
+        # Export based on format
+        export_format = request.export_format.lower()
+        
+        if export_format == "json":
+            response_data["chart_json"] = fig.to_json()
+            
+        elif export_format == "html":
+            response_data["chart_html"] = fig.to_html(include_plotlyjs='cdn')
+            
+        elif export_format in ["png", "jpg", "jpeg", "pdf"]:
+            # Export to image using kaleido
+            try:
+                # Determine image format
+                img_format = "jpeg" if export_format in ["jpg", "jpeg"] else export_format
+                
+                # Export to bytes
+                img_bytes = fig.to_image(
+                    format=img_format,
+                    width=request.image_width,
+                    height=request.image_height,
+                    engine="kaleido"
+                )
+                
+                # Convert to base64
+                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                
+                response_data["chart_image_base64"] = img_base64
+                response_data["image_width"] = request.image_width
+                response_data["image_height"] = request.image_height
+                response_data["mime_type"] = f"image/{img_format}" if img_format != "pdf" else "application/pdf"
+                
+            except Exception as img_error:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to export image. Make sure kaleido is installed: {str(img_error)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported export format: {export_format}. Use: json, html, png, jpg, or pdf"
+            )
         
         return SuccessResponse(
             success=True,
-            message="Chart generated successfully",
-            data={
-                "chart_json": chart_json,
-                "chart_html": chart_html,
-                "sql": sql,
-                "row_count": len(df),
-                "data": df.head(10).to_dict(orient='records'),
-                "plotly_code": plotly_code
+            message=f"Chart generated successfully as {export_format.upper()}",
+            data=response_data
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate chart: {str(e)}")
+
+
+@app.get("/download_chart/{format}")
+async def download_chart(
+    format: str,
+    question: str,
+    sql: Optional[str] = None,
+    dark_mode: bool = False,
+    width: int = 1200,
+    height: int = 800
+):
+    """
+    Download chart as file (PNG, JPG, PDF)
+    
+    Direct download endpoint - returns file for browser download
+    
+    Example:
+    GET /download_chart/jpg?question=Top 10 customers&width=1920&height=1080
+    """
+    vn = vanna_service.get_instance()
+    
+    try:
+        # Generate SQL if not provided
+        if not sql:
+            sql = vn.generate_sql(question)
+        
+        # Execute SQL
+        df = vn.run_sql(sql)
+        
+        if not vn.should_generate_chart(df):
+            raise HTTPException(status_code=400, detail="Data not suitable for chart")
+        
+        # Generate chart
+        plotly_code = vn.generate_plotly_code(
+            question=question,
+            sql=sql,
+            df_metadata=f"Running df.dtypes gives:\n{df.dtypes}"
+        )
+        
+        fig = vn.get_plotly_figure(plotly_code=plotly_code, df=df, dark_mode=dark_mode)
+        
+        # Export to image
+        img_format = "jpeg" if format.lower() in ["jpg", "jpeg"] else format.lower()
+        
+        img_bytes = fig.to_image(
+            format=img_format,
+            width=width,
+            height=height,
+            engine="kaleido"
+        )
+        
+        # Return as file download
+        media_type = f"image/{img_format}" if img_format != "pdf" else "application/pdf"
+        filename = f"chart.{format.lower()}"
+        
+        return Response(
+            content=img_bytes,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
             }
         )
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to download chart: {str(e)}")
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate chart: {str(e)}")

@@ -21,3 +21,7 @@ python-multipart==0.0.9
 # Utils
 numpy==1.26.4
 python-dotenv==1.0.1
+
+# Chart Export (for image generation)
+kaleido==0.2.1
+pillow==10.1.0
