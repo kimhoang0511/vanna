@@ -755,21 +755,19 @@ async def clear_training_data():
         df_before = vn.get_training_data()
         count_before = len(df_before) if df_before is not None else 0
         
-        # Remove all training data
-        # Vanna stores training data in ChromaDB collections
-        # We need to clear the collection by removing all items
-        if hasattr(vn, 'remove_training_data'):
-            # If Vanna has a built-in method to clear data
-            vn.remove_training_data()
-        else:
-            # Manually clear by removing all IDs
-            if df_before is not None and len(df_before) > 0:
-                for _, row in df_before.iterrows():
-                    if 'id' in row:
-                        try:
-                            vn.remove_training_data(id=row['id'])
-                        except:
-                            pass
+        # Remove all training data by ID
+        removed_count = 0
+        failed_count = 0
+        
+        if df_before is not None and len(df_before) > 0:
+            for _, row in df_before.iterrows():
+                if 'id' in row:
+                    try:
+                        vn.remove_training_data(id=row['id'])
+                        removed_count += 1
+                    except Exception as remove_error:
+                        failed_count += 1
+                        print(f"Failed to remove ID {row['id']}: {str(remove_error)}")
         
         # Verify data is cleared
         df_after = vn.get_training_data()
@@ -777,11 +775,12 @@ async def clear_training_data():
         
         return SuccessResponse(
             success=True,
-            message=f"Training data cleared successfully. Removed {count_before} items. {count_after} items remaining.",
+            message=f"Training data cleared successfully. Removed {removed_count} items, {failed_count} failed. {count_after} items remaining.",
             data={
                 "count_before": count_before,
                 "count_after": count_after,
-                "cleared": count_before - count_after
+                "removed": removed_count,
+                "failed": failed_count
             }
         )
     
