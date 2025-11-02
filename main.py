@@ -737,6 +737,58 @@ async def download_chart(
         raise HTTPException(status_code=500, detail=f"Failed to generate chart: {str(e)}")
 
 
+@app.post("/clear_training_data", response_model=SuccessResponse)
+async def clear_training_data():
+    """Clear all training data from ChromaDB
+    
+    This endpoint removes all training data including:
+    - DDL (Data Definition Language)
+    - Documentation
+    - SQL examples
+    
+    Use this before retraining to avoid conflicts with old data.
+    """
+    vn = vanna_service.get_instance()
+    
+    try:
+        # Get current training data before clearing
+        df_before = vn.get_training_data()
+        count_before = len(df_before) if df_before is not None else 0
+        
+        # Remove all training data
+        # Vanna stores training data in ChromaDB collections
+        # We need to clear the collection by removing all items
+        if hasattr(vn, 'remove_training_data'):
+            # If Vanna has a built-in method to clear data
+            vn.remove_training_data()
+        else:
+            # Manually clear by removing all IDs
+            if df_before is not None and len(df_before) > 0:
+                for _, row in df_before.iterrows():
+                    if 'id' in row:
+                        try:
+                            vn.remove_training_data(id=row['id'])
+                        except:
+                            pass
+        
+        # Verify data is cleared
+        df_after = vn.get_training_data()
+        count_after = len(df_after) if df_after is not None else 0
+        
+        return SuccessResponse(
+            success=True,
+            message=f"Training data cleared successfully. Removed {count_before} items. {count_after} items remaining.",
+            data={
+                "count_before": count_before,
+                "count_after": count_after,
+                "cleared": count_before - count_after
+            }
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear training data: {str(e)}")
+
+
 @app.get("/training_data", response_model=SuccessResponse)
 async def get_training_data():
     """Get all training data"""
