@@ -193,6 +193,70 @@ def main():
         # assets_folder=None,          # Custom assets folder
     )
     
+    # Override generate_sql endpoint to check cache first
+    @app.flask_app.route("/api/v0/generate_sql", methods=["GET"])
+    def generate_sql_with_cache():
+        """
+        Generate SQL with cache lookup first
+        Override default endpoint to check cache before calling LLM
+        """
+        from flask import request, jsonify
+        
+        question = request.args.get("question")
+        if not question:
+            return jsonify({"type": "error", "error": "No question provided"})
+        
+        # Generate cache ID from question hash
+        cache_id = custom_cache.generate_id(question=question)
+        
+        # Check cache first
+        cached_sql = custom_cache.get(cache_id, "sql")
+        
+        if cached_sql:
+            # Cache HIT - return immediately without calling LLM
+            print(f"✅ Cache HIT: {question[:60]}...")
+            return jsonify({
+                "type": "sql",
+                "id": cache_id,
+                "text": cached_sql,
+                "cached": True
+            })
+        
+        # Cache MISS - call LLM
+        print(f"⚠️  Cache MISS: {question[:60]}... → Calling LLM")
+        
+        try:
+            sql = vn.generate_sql(
+                question=question,
+                allow_llm_to_see_data=allow_llm_to_see_data
+            )
+            
+            # Save to cache for next time
+            custom_cache.set(cache_id, "question", question)
+            custom_cache.set(cache_id, "sql", sql)
+            
+            print(f"💾 Cached for future: {cache_id}")
+            
+            if vn.is_sql_valid(sql=sql):
+                return jsonify({
+                    "type": "sql",
+                    "id": cache_id,
+                    "text": sql,
+                    "cached": False
+                })
+            else:
+                return jsonify({
+                    "type": "text",
+                    "id": cache_id,
+                    "text": sql,
+                    "cached": False
+                })
+        except Exception as e:
+            return jsonify({
+                "type": "error",
+                "error": str(e)
+            })
+    
     print("=" * 70)
     print("✅ Server is ready!")
     print("=" * 70)
