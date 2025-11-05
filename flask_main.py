@@ -41,6 +41,7 @@ from bge_m3_embedding import BGE_M3_EmbeddingFunction
 from vanna.chromadb import ChromaDB_VectorStore
 from vanna.openai import OpenAI_Chat
 from vanna.flask import VannaFlaskApp
+from vanna_cache_fix import QuestionHashCache
 
 # ============================================================================
 # Define Custom Vanna Class
@@ -152,9 +153,14 @@ def main():
     debug = os.getenv("DEBUG", "True").lower() == "true"
     allow_llm_to_see_data = os.getenv("ALLOW_LLM_TO_SEE_DATA", "True").lower() == "true"
     
+    # Initialize custom cache with question hashing
+    print("🔧 Initializing cache with question hashing...")
+    custom_cache = QuestionHashCache()
+    
     # Create Flask app with full UI and API
     app = VannaFlaskApp(
         vn=vn,
+        cache=custom_cache,  # Use custom cache
         
         # Authentication (default: no auth)
         # auth=NoAuth(),  # You can implement custom auth here
