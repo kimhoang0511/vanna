@@ -3,6 +3,7 @@ Custom Embedding Function cho Vanna sử dụng BAAI/bge-m3 từ Hugging Face
 """
 
 import os
+import time
 import numpy as np
 from typing import List
 from huggingface_hub import InferenceClient
@@ -48,34 +49,54 @@ class BGE_M3_EmbeddingFunction:
             return []
         
         embeddings = []
+        max_retries = 3
+        retry_delay = 2  # seconds
         
         for text in texts:
-            try:
-                # Use InferenceClient.feature_extraction method
-                embedding = self.client.feature_extraction(text, model=self.model_name)
-                
-                # Convert to numpy array and flatten if needed
-                emb_array = np.array(embedding, dtype=np.float32)
-                if emb_array.ndim > 1:
-                    emb_array = emb_array.flatten()
-                
-                # Normalize the embedding
-                norm = np.linalg.norm(emb_array)
-                if norm > 1e-9:
-                    emb_array = emb_array / norm
-                
-                embeddings.append(emb_array.tolist())
-                
-            except Exception as e:
-                error_msg = str(e).lower()
-                if 'rate limit' in error_msg or '429' in error_msg:
-                    raise Exception(f"⚠️ Rate limit exceeded: {e}")
-                elif 'timeout' in error_msg:
-                    raise Exception(f"⚠️ Request timeout: {e}")
-                elif 'model is currently loading' in error_msg or '503' in error_msg:
-                    raise Exception(f"⚠️ Model is loading, retry in a few seconds: {e}")
-                else:
-                    raise Exception(f"❌ Hugging Face API error: {e}")
+            for attempt in range(max_retries):
+                try:
+                    # Use InferenceClient.feature_extraction method
+                    embedding = self.client.feature_extraction(text, model=self.model_name)
+                    
+                    # Convert to numpy array and flatten if needed
+                    emb_array = np.array(embedding, dtype=np.float32)
+                    if emb_array.ndim > 1:
+                        emb_array = emb_array.flatten()
+                    
+                    # Normalize the embedding
+                    norm = np.linalg.norm(emb_array)
+                    if norm > 1e-9:
+                        emb_array = emb_array / norm
+                    
+                    embeddings.append(emb_array.tolist())
+                    break  # Success, exit retry loop
+                    
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    
+                    # Check if this is a retryable error
+                    is_retryable = (
+                        '500' in error_msg or 
+                        '503' in error_msg or
+                        'internal server error' in error_msg or
+                        'model is currently loading' in error_msg or
+                        'timeout' in error_msg
+                    )
+                    
+                    if is_retryable and attempt < max_retries - 1:
+                        # Retry with exponential backoff
+                        wait_time = retry_delay * (2 ** attempt)
+                        print(f"⚠️  HF API error (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    
+                    # Non-retryable error or max retries reached
+                    if 'rate limit' in error_msg or '429' in error_msg:
+                        raise Exception(f"⚠️ Rate limit exceeded: {e}")
+                    elif not is_retryable:
+                        raise Exception(f"❌ Hugging Face API error: {e}")
+                    else:
+                        raise Exception(f"❌ Hugging Face API error after {max_retries} attempts: {e}")
         
         return embeddings
 
