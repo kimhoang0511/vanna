@@ -103,11 +103,12 @@ def initialize_vanna():
 def connect_to_database(vn):
     """Connect to PostgreSQL database and return connection params"""
     
-    db_host = os.getenv("DB_HOST", "localhost")
-    db_port = int(os.getenv("DB_PORT", "5432"))
-    db_name = os.getenv("DB_NAME", "postgres")
-    db_user = os.getenv("DB_USER", "postgres")
-    db_password = os.getenv("DB_PASSWORD", "")
+    # Support both DB_* and PG* environment variables (Railway uses PG*)
+    db_host = os.getenv("DB_HOST") or os.getenv("PGHOST") or "localhost"
+    db_port = int(os.getenv("DB_PORT") or os.getenv("PGPORT") or "5432")
+    db_name = os.getenv("DB_NAME") or os.getenv("PGDATABASE") or "postgres"
+    db_user = os.getenv("DB_USER") or os.getenv("PGUSER") or "postgres"
+    db_password = os.getenv("DB_PASSWORD") or os.getenv("PGPASSWORD") or ""
     
     db_params = {
         'host': db_host,
