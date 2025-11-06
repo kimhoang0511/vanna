@@ -1,0 +1,12 @@
+# Files to ignore during Railway build
+.env
+.env.local
+.env.*.local
+*.pyc
+__pycache__/
+.git/
+.vscode/
+.idea/
+*.log
+vanna_cache.json
+chroma.sqlite3
