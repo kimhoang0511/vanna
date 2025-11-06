@@ -211,32 +211,11 @@ def main():
         # assets_folder=None,          # Custom assets folder
     )
     
-    # Force remove old generate_sql endpoint to ensure our override works
-    print("🔧 Overriding default generate_sql endpoint...")
+    # Monkey-patch the generate_sql method in VannaBase to add caching
+    original_generate_sql = vn.generate_sql
     
-    # Remove the default rule (if exists)
-    rules_to_remove = []
-    for rule in app.flask_app.url_map.iter_rules():
-        if rule.endpoint == 'generate_sql':
-            rules_to_remove.append(rule)
-    
-    for rule in rules_to_remove:
-        app.flask_app.url_map._rules.remove(rule)
-        app.flask_app.url_map._rules_by_endpoint.pop('generate_sql', None)
-    
-    # Override generate_sql endpoint to check cache first
-    @app.flask_app.route("/api/v0/generate_sql", methods=["GET"])
-    def generate_sql_with_cache():
-        """
-        Generate SQL with cache lookup first
-        Override default endpoint to check cache before calling LLM
-        """
-        from flask import request, jsonify
-        
-        question = request.args.get("question")
-        if not question:
-            return jsonify({"type": "error", "error": "No question provided"})
-        
+    def cached_generate_sql(question, **kwargs):
+        """Wrapper around generate_sql with caching"""
         # Generate cache ID from question hash
         cache_id = custom_cache.generate_id(question=question)
         
@@ -246,49 +225,24 @@ def main():
         if cached_sql:
             # Cache HIT - return immediately without calling LLM
             print(f"✅ Cache HIT: {question[:60]}...")
-            return jsonify({
-                "type": "sql",
-                "id": cache_id,
-                "text": cached_sql,
-                "cached": True
-            })
+            return cached_sql
         
-        # Cache MISS - call LLM
+        # Cache MISS - call original LLM method
         print(f"⚠️  Cache MISS: {question[:60]}... → Calling LLM")
+        sql = original_generate_sql(question, **kwargs)
         
-        try:
-            sql = vn.generate_sql(
-                question=question,
-                allow_llm_to_see_data=allow_llm_to_see_data
-            )
-            
-            # Save to cache for next time (batch save for performance)
-            custom_cache.set_multiple(cache_id, {
-                "question": question,
-                "sql": sql
-            })
-            
-            print(f"💾 Cached for future: {cache_id}")
-            
-            if vn.is_sql_valid(sql=sql):
-                return jsonify({
-                    "type": "sql",
-                    "id": cache_id,
-                    "text": sql,
-                    "cached": False
-                })
-            else:
-                return jsonify({
-                    "type": "text",
-                    "id": cache_id,
-                    "text": sql,
-                    "cached": False
-                })
-        except Exception as e:
-            return jsonify({
-                "type": "error",
-                "error": str(e)
-            })
+        # Save to cache for next time (batch save for performance)
+        custom_cache.set_multiple(cache_id, {
+            "question": question,
+            "sql": sql
+        })
+        
+        print(f"💾 Cached for future: {cache_id}")
+        return sql
+    
+    # Replace the method
+    vn.generate_sql = cached_generate_sql
+    print("✅ Cache wrapper installed on generate_sql method")
     
     # Add new endpoint to load from custom cache
     @app.flask_app.route("/api/v0/get_cached_question", methods=["GET"])
