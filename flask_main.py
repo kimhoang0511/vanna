@@ -103,13 +103,39 @@ def initialize_vanna():
 def connect_to_database(vn):
     """Connect to PostgreSQL database and return connection params"""
     
-    # Railway uses RAILWAY_PRIVATE_DOMAIN for internal connections
-    # Also support DB_* and PG* environment variables
+    # Railway recommends using DATABASE_URL for service-to-service connection
+    database_url = os.getenv("DATABASE_URL")
+    
+    if database_url:
+        # Parse DATABASE_URL (format: postgresql://user:password@host:port/dbname)
+        print(f"🔗 Using DATABASE_URL for connection...")
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(database_url)
+            
+            db_params = {
+                'host': parsed.hostname,
+                'port': parsed.port or 5432,
+                'dbname': parsed.path[1:] if parsed.path else 'railway',  # Remove leading /
+                'user': parsed.username,
+                'password': parsed.password
+            }
+            
+            print(f"🔗 Connecting to PostgreSQL: {db_params['host']}:{db_params['port']}/{db_params['dbname']}...")
+            
+            vn.connect_to_postgres(**db_params)
+            print("✅ Database connected successfully!")
+            return db_params
+            
+        except Exception as e:
+            print(f"⚠️  Warning: Could not parse/connect DATABASE_URL: {str(e)}")
+            print("   Falling back to individual environment variables...")
+    
+    # Fallback: Use individual environment variables
     db_host = (
-        os.getenv("RAILWAY_PRIVATE_DOMAIN") or  # Railway internal domain (priority)
-        os.getenv("PGHOST") or                   # Railway public host
-        os.getenv("DB_HOST") or                  # Custom host
-        "localhost"                               # Default
+        os.getenv("PGHOST") or
+        os.getenv("DB_HOST") or
+        "localhost"
     )
     db_port = int(os.getenv("DB_PORT") or os.getenv("PGPORT") or "5432")
     db_name = os.getenv("PGDATABASE") or os.getenv("POSTGRES_DB") or os.getenv("DB_NAME") or "railway"
