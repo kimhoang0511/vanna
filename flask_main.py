@@ -249,9 +249,11 @@ def main():
                 allow_llm_to_see_data=allow_llm_to_see_data
             )
             
-            # Save to cache for next time
-            custom_cache.set(cache_id, "question", question)
-            custom_cache.set(cache_id, "sql", sql)
+            # Save to cache for next time (batch save for performance)
+            custom_cache.set_multiple(cache_id, {
+                "question": question,
+                "sql": sql
+            })
             
             print(f"💾 Cached for future: {cache_id}")
             

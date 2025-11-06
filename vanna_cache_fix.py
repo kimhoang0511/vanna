@@ -38,6 +38,12 @@ class QuestionHashCache(Cache):
             self.cache[id] = {}
         self.cache[id][field] = value
     
+    def set_multiple(self, id, fields_dict):
+        """Set nhiều fields cùng lúc (efficient)"""
+        if id not in self.cache:
+            self.cache[id] = {}
+        self.cache[id].update(fields_dict)
+    
     def get(self, id, field):
         """Lấy giá trị từ cache"""
         if id not in self.cache:
@@ -124,6 +130,11 @@ class PersistentQuestionCache(QuestionHashCache):
     def set(self, id, field, value):
         """Set và save"""
         super().set(id, field, value)
+        self._save_cache()
+    
+    def set_multiple(self, id, fields_dict):
+        """Set nhiều fields và save 1 lần duy nhất (efficient)"""
+        super().set_multiple(id, fields_dict)
         self._save_cache()
     
     def delete(self, id):

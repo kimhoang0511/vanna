@@ -6,34 +6,61 @@ Lưu cache vào database thay vì file - persistent và scalable
 import hashlib
 import json
 import psycopg2
+from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from vanna.flask import Cache
 
 
 class PostgresCache(Cache):
     """
-    Cache implementation sử dụng PostgreSQL
+    Cache implementation sử dụng PostgreSQL với connection pooling
     - Persistent: Không mất khi restart
     - Scalable: Share được giữa multiple instances
     - Queryable: Dễ dàng query và quản lý
+    - Optimized: Connection pooling cho performance
     """
     
-    def __init__(self, connection_params):
+    def __init__(self, connection_params, min_conn=1, max_conn=10):
         """
-        Initialize PostgreSQL cache
+        Initialize PostgreSQL cache với connection pooling
         
         Args:
             connection_params: Dict với keys: host, port, dbname, user, password
+            min_conn: Minimum connections trong pool
+            max_conn: Maximum connections trong pool
         """
         self.connection_params = connection_params
+        
+        # Create connection pool
+        try:
+            self.connection_pool = pool.SimpleConnectionPool(
+                min_conn, max_conn, **connection_params
+            )
+            print(f"✅ Connection pool created: {min_conn}-{max_conn} connections")
+        except Exception as e:
+            print(f"⚠️  Failed to create connection pool: {e}")
+            self.connection_pool = None
+        
         self._create_table_if_not_exists()
     
     def _get_connection(self):
-        """Get database connection"""
-        return psycopg2.connect(**self.connection_params)
+        """Get connection from pool (faster than creating new)"""
+        if self.connection_pool:
+            return self.connection_pool.getconn()
+        else:
+            # Fallback to direct connection
+            return psycopg2.connect(**self.connection_params)
+    
+    def _return_connection(self, conn):
+        """Return connection to pool"""
+        if self.connection_pool:
+            self.connection_pool.putconn(conn)
+        else:
+            conn.close()
     
     def _create_table_if_not_exists(self):
         """Create cache table if not exists"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -56,12 +83,14 @@ class PostgresCache(Cache):
             
             conn.commit()
             cursor.close()
-            conn.close()
+            self._return_connection(conn)
             
             print("✅ PostgreSQL cache table ready")
             
         except Exception as e:
             print(f"⚠️  Error creating cache table: {e}")
+            if conn:
+                self._return_connection(conn)
     
     def generate_id(self, question=None, *args, **kwargs):
         """
@@ -119,8 +148,52 @@ class PostgresCache(Cache):
         except Exception as e:
             print(f"⚠️  Error setting cache: {e}")
     
+    def set_multiple(self, id, fields_dict):
+        """Set nhiều fields cùng lúc - chỉ 1 database roundtrip (efficient)"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            # Get existing data
+            cursor.execute(
+                "SELECT data FROM vanna_cache WHERE id = %s",
+                (id,)
+            )
+            row = cursor.fetchone()
+            
+            if row:
+                # Update existing
+                data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+                data.update(fields_dict)
+                
+                cursor.execute(
+                    """
+                    UPDATE vanna_cache 
+                    SET data = %s, updated_at = CURRENT_TIMESTAMP 
+                    WHERE id = %s
+                    """,
+                    (json.dumps(data), id)
+                )
+            else:
+                # Insert new
+                cursor.execute(
+                    "INSERT INTO vanna_cache (id, data) VALUES (%s, %s)",
+                    (id, json.dumps(fields_dict))
+                )
+            
+            conn.commit()
+            cursor.close()
+            self._return_connection(conn)
+            
+        except Exception as e:
+            print(f"⚠️  Error setting multiple cache fields: {e}")
+            if conn:
+                self._return_connection(conn)
+    
     def get(self, id, field):
         """Lấy giá trị từ cache"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -132,7 +205,7 @@ class PostgresCache(Cache):
             row = cursor.fetchone()
             
             cursor.close()
-            conn.close()
+            self._return_connection(conn)
             
             if row:
                 data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
@@ -142,6 +215,8 @@ class PostgresCache(Cache):
             
         except Exception as e:
             print(f"⚠️  Error getting cache: {e}")
+            if conn:
+                self._return_connection(conn)
             return None
     
     def get_all(self, field_list) -> list:
