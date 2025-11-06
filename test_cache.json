@@ -1,0 +1,6 @@
+{
+  "5e3889e577678d281a44222f93da0962": {
+    "question": "Top 10 khách hàng có doanh thu cao nhất",
+    "sql": "SELECT * FROM customers"
+  }
+}
