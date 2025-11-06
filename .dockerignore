@@ -36,6 +36,7 @@ htmlcov/
 # Git
 .git/
 .gitignore
+.gitattributes
 
 # ChromaDB local storage (sẽ tạo mới trên Railway)
 chroma.sqlite3
@@ -50,24 +51,49 @@ test_*.py
 demo_*.py
 debug_*.py
 check_*.py
+*_test.py
 
-# HTML output files
+# HTML output files (chỉ giữ templates nếu có)
 *.html
-!chart_*.html
+!templates/*.html
 
 # Logs
 *.log
+logs/
 
 # OS
 .DS_Store
 Thumbs.db
+.AppleDouble
+.LSOverride
 
 # Temporary files
 *.tmp
 *.temp
+*.bak
+*.swp
 
-# UUID directories (ChromaDB collections)
-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*/
+# UUID directories (ChromaDB collections - sẽ tạo mới)
+[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]-*/
 
-# Config examples
+# Config examples và deployment docs
 config_examples.py
+RAILWAY_*.md
+DEPLOYMENT_*.md
+*_GUIDE.md
+*_EXPLAINED.md
+deploy_*.sh
+test_railway_*.py
+
+# Nixpacks (nếu dùng Docker)
+nixpacks.toml
+
+# Requirements variations
+requirements-*.txt
+!requirements.txt
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
