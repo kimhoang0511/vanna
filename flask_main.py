@@ -211,6 +211,19 @@ def main():
         # assets_folder=None,          # Custom assets folder
     )
     
+    # Force remove old generate_sql endpoint to ensure our override works
+    print("🔧 Overriding default generate_sql endpoint...")
+    
+    # Remove the default rule (if exists)
+    rules_to_remove = []
+    for rule in app.flask_app.url_map.iter_rules():
+        if rule.endpoint == 'generate_sql':
+            rules_to_remove.append(rule)
+    
+    for rule in rules_to_remove:
+        app.flask_app.url_map._rules.remove(rule)
+        app.flask_app.url_map._rules_by_endpoint.pop('generate_sql', None)
+    
     # Override generate_sql endpoint to check cache first
     @app.flask_app.route("/api/v0/generate_sql", methods=["GET"])
     def generate_sql_with_cache():
