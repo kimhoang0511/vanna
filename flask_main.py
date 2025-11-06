@@ -41,7 +41,7 @@ from bge_m3_embedding import BGE_M3_EmbeddingFunction
 from vanna.chromadb import ChromaDB_VectorStore
 from vanna.openai import OpenAI_Chat
 from vanna.flask import VannaFlaskApp
-from vanna_cache_fix import QuestionHashCache
+from vanna_cache_fix import QuestionHashCache, PersistentQuestionCache
 
 # ============================================================================
 # Define Custom Vanna Class
@@ -155,7 +155,7 @@ def main():
     
     # Initialize custom cache with question hashing
     print("🔧 Initializing cache with question hashing...")
-    custom_cache = QuestionHashCache()
+    custom_cache = PersistentQuestionCache(cache_file="vanna_cache.json")
     
     # Create Flask app with full UI and API
     app = VannaFlaskApp(
