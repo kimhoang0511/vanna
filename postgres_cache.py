@@ -109,6 +109,7 @@ class PostgresCache(Cache):
     
     def set(self, id, field, value):
         """Set giá trị vào cache"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -143,10 +144,14 @@ class PostgresCache(Cache):
             
             conn.commit()
             cursor.close()
-            conn.close()
             
         except Exception as e:
             print(f"⚠️  Error setting cache: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                self._return_connection(conn)
     
     def set_multiple(self, id, fields_dict):
         """Set nhiều fields cùng lúc - chỉ 1 database roundtrip (efficient)"""
@@ -205,7 +210,6 @@ class PostgresCache(Cache):
             row = cursor.fetchone()
             
             cursor.close()
-            self._return_connection(conn)
             
             if row:
                 data = row[0] if isinstance(row[0], dict) else json.loads(row[0])
@@ -215,12 +219,14 @@ class PostgresCache(Cache):
             
         except Exception as e:
             print(f"⚠️  Error getting cache: {e}")
+            return None
+        finally:
             if conn:
                 self._return_connection(conn)
-            return None
     
     def get_all(self, field_list) -> list:
         """Lấy tất cả entries từ cache"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -231,7 +237,6 @@ class PostgresCache(Cache):
             rows = cursor.fetchall()
             
             cursor.close()
-            conn.close()
             
             result = []
             for row in rows:
@@ -246,9 +251,13 @@ class PostgresCache(Cache):
         except Exception as e:
             print(f"⚠️  Error getting all cache: {e}")
             return []
+        finally:
+            if conn:
+                self._return_connection(conn)
     
     def delete(self, id):
         """Xóa entry khỏi cache"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -260,13 +269,18 @@ class PostgresCache(Cache):
             
             conn.commit()
             cursor.close()
-            conn.close()
             
         except Exception as e:
             print(f"⚠️  Error deleting cache: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                self._return_connection(conn)
     
     def clear(self):
         """Clear toàn bộ cache"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -275,15 +289,20 @@ class PostgresCache(Cache):
             
             conn.commit()
             cursor.close()
-            conn.close()
             
             print("✅ Cache cleared")
             
         except Exception as e:
             print(f"⚠️  Error clearing cache: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                self._return_connection(conn)
     
     def size(self):
         """Lấy số lượng entries trong cache"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -292,16 +311,19 @@ class PostgresCache(Cache):
             count = cursor.fetchone()[0]
             
             cursor.close()
-            conn.close()
             
             return count
             
         except Exception as e:
             print(f"⚠️  Error getting cache size: {e}")
             return 0
+        finally:
+            if conn:
+                self._return_connection(conn)
     
     def get_stats(self):
         """Get cache statistics"""
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -325,13 +347,16 @@ class PostgresCache(Cache):
             questions = [row['question'] for row in cursor.fetchall()]
             
             cursor.close()
-            conn.close()
+            
+            # Add connection pool stats
+            pool_stats = self.get_pool_stats()
             
             return {
                 "total_entries": stats['total_entries'],
                 "oldest_entry": str(stats['oldest_entry']) if stats['oldest_entry'] else None,
                 "newest_entry": str(stats['newest_entry']) if stats['newest_entry'] else None,
-                "sample_questions": questions
+                "sample_questions": questions,
+                "connection_pool": pool_stats
             }
             
         except Exception as e:
@@ -340,6 +365,30 @@ class PostgresCache(Cache):
                 "total_entries": 0,
                 "error": str(e)
             }
+        finally:
+            if conn:
+                self._return_connection(conn)
+    
+    def get_pool_stats(self):
+        """Get connection pool statistics for monitoring"""
+        if self.connection_pool:
+            try:
+                # SimpleConnectionPool has _pool (available) and _used (in use)
+                available = len(self.connection_pool._pool)
+                used = len(self.connection_pool._used)
+                max_conn = self.connection_pool.maxconn
+                
+                return {
+                    "max_connections": max_conn,
+                    "available": available,
+                    "in_use": used,
+                    "health": "healthy" if available > 0 else "exhausted"
+                }
+            except Exception as e:
+                return {
+                    "error": f"Could not get pool stats: {e}"
+                }
+        return None
 
 
 # Test script
