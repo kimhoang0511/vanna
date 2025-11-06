@@ -257,12 +257,12 @@ def main():
                 "error": str(e)
             })
     
-    # Override load_question endpoint to properly load from cache
-    @app.flask_app.route("/api/v0/load_question", methods=["GET"])
-    def load_question_from_cache():
+    # Add new endpoint to load from custom cache
+    @app.flask_app.route("/api/v0/get_cached_question", methods=["GET"])
+    def get_cached_question():
         """
         Load question and SQL from cache by ID
-        Override default endpoint to work with custom cache
+        New endpoint to work with custom cache
         """
         from flask import request, jsonify
         
@@ -279,8 +279,8 @@ def main():
             return jsonify({
                 "type": "question_cache",
                 "id": cache_id,
-                "question": cached_question,
-                "sql": cached_sql
+                "question": cached_question if cached_question else "N/A",
+                "sql": cached_sql if cached_sql else "N/A"
             })
         else:
             print(f"❌ Cache miss: {cache_id}")
@@ -288,6 +288,18 @@ def main():
                 "type": "error",
                 "error": f"No cached data found for id: {cache_id}"
             })
+    
+    # Add endpoint to get cache stats
+    @app.flask_app.route("/api/v0/cache_stats", methods=["GET"])
+    def get_cache_stats():
+        """Get cache statistics"""
+        from flask import jsonify
+        
+        stats = custom_cache.get_stats()
+        return jsonify({
+            "type": "cache_stats",
+            "stats": stats
+        })
     
     print("=" * 70)
     print("✅ Server is ready!")
