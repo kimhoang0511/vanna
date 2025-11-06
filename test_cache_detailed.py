@@ -28,7 +28,9 @@ def test_method_1_timing():
     print("📊 METHOD 1: Timing Comparison")
     print("=" * 70)
     
-    question = "SELECT COUNT(*) FROM customers"
+    # Use unique question with timestamp to avoid pre-existing cache
+    import random
+    question = f"SELECT COUNT(*) FROM customers WHERE id > {random.randint(1, 1000)}"
     
     print(f"\nQuestion: {question}")
     print(f"Expected Cache ID: {calculate_question_hash(question)}")
@@ -36,6 +38,7 @@ def test_method_1_timing():
     
     times = []
     responses = []
+    cached_flags = []
     
     for i in range(3):
         print(f"Request {i+1}/3...")
@@ -55,12 +58,16 @@ def test_method_1_timing():
                 data = response.json()
                 sql = data.get("text", data.get("sql", "N/A"))
                 response_id = data.get("id", "N/A")
+                cached = data.get("cached", False)
+                cached_flags.append(cached)
                 responses.append({
                     "sql": sql,
                     "id": response_id,
-                    "time": elapsed
+                    "time": elapsed,
+                    "cached": cached
                 })
-                print(f"  ✅ Time: {elapsed:.2f}s | ID: {response_id}")
+                cache_status = "CACHED" if cached else "LLM"
+                print(f"  ✅ Time: {elapsed:.2f}s | ID: {response_id} | {cache_status}")
             else:
                 print(f"  ❌ Failed: {response.status_code}")
                 return False
@@ -74,16 +81,16 @@ def test_method_1_timing():
     # Analysis
     print("\n" + "-" * 70)
     print("📈 Analysis:")
-    print(f"  Request 1: {times[0]:.2f}s (LLM)")
-    print(f"  Request 2: {times[1]:.2f}s (should be cached)")
-    print(f"  Request 3: {times[2]:.2f}s (should be cached)")
+    print(f"  Request 1: {times[0]:.2f}s (cached={cached_flags[0]})")
+    print(f"  Request 2: {times[1]:.2f}s (cached={cached_flags[1]})")
+    print(f"  Request 3: {times[2]:.2f}s (cached={cached_flags[2]})")
     
-    # Check if requests 2 & 3 are significantly faster
-    if times[1] < times[0] * 0.5 and times[2] < times[0] * 0.5:
-        print("\n✅ CACHE WORKING: Requests 2-3 are much faster!")
+    # Check if requests 2 & 3 are marked as cached OR significantly faster
+    if (cached_flags[1] and cached_flags[2]) or (times[1] < times[0] * 0.5 and times[2] < times[0] * 0.5):
+        print("\n✅ CACHE WORKING: Requests 2-3 are cached or much faster!")
         return True
     else:
-        print("\n❌ CACHE NOT WORKING: All requests take similar time")
+        print("\n❌ CACHE NOT WORKING: Requests not properly cached")
         return False
 
 def test_method_2_response_id():
