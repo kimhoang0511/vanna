@@ -42,6 +42,7 @@ from vanna.chromadb import ChromaDB_VectorStore
 from vanna.openai import OpenAI_Chat
 from vanna.flask import VannaFlaskApp
 from vanna_cache_fix import QuestionHashCache, PersistentQuestionCache
+from postgres_cache import PostgresCache
 
 # ============================================================================
 # Define Custom Vanna Class
@@ -100,7 +101,7 @@ def initialize_vanna():
 
 
 def connect_to_database(vn):
-    """Connect to PostgreSQL database"""
+    """Connect to PostgreSQL database and return connection params"""
     
     db_host = os.getenv("DB_HOST", "localhost")
     db_port = int(os.getenv("DB_PORT", "5432"))
@@ -108,22 +109,24 @@ def connect_to_database(vn):
     db_user = os.getenv("DB_USER", "postgres")
     db_password = os.getenv("DB_PASSWORD", "")
     
+    db_params = {
+        'host': db_host,
+        'port': db_port,
+        'dbname': db_name,
+        'user': db_user,
+        'password': db_password
+    }
+    
     print(f"🔗 Connecting to PostgreSQL: {db_host}:{db_port}/{db_name}...")
     
     try:
-        vn.connect_to_postgres(
-            host=db_host,
-            port=db_port,
-            dbname=db_name,
-            user=db_user,
-            password=db_password
-        )
+        vn.connect_to_postgres(**db_params)
         print("✅ Database connected successfully!")
-        return True
+        return db_params
     except Exception as e:
         print(f"⚠️  Warning: Could not connect to database: {str(e)}")
         print("   You can connect later using the UI or API")
-        return False
+        return db_params  # Still return params for cache usage
 
 
 # ============================================================================
@@ -141,8 +144,8 @@ def main():
     # Initialize Vanna
     vn = initialize_vanna()
     
-    # Try to connect to database
-    connect_to_database(vn)
+    # Try to connect to database and get connection params
+    db_params = connect_to_database(vn)
     
     print()
     print("🌐 Starting Flask server...")
@@ -154,8 +157,23 @@ def main():
     allow_llm_to_see_data = os.getenv("ALLOW_LLM_TO_SEE_DATA", "True").lower() == "true"
     
     # Initialize custom cache with question hashing
-    print("🔧 Initializing cache with question hashing...")
-    custom_cache = PersistentQuestionCache(cache_file="vanna_cache.json")
+    print("🔧 Initializing cache...")
+    
+    # Choose cache backend based on environment variable
+    cache_backend = os.getenv("CACHE_BACKEND", "file").lower()
+    
+    if cache_backend == "postgres":
+        print("📊 Using PostgreSQL cache (persistent, shared across instances)")
+        try:
+            custom_cache = PostgresCache(connection_params=db_params)
+            print(f"✅ PostgreSQL cache initialized: {db_params['host']}:{db_params['port']}/{db_params['dbname']}")
+        except Exception as e:
+            print(f"⚠️  Failed to initialize PostgreSQL cache: {e}")
+            print("   Falling back to file cache...")
+            custom_cache = PersistentQuestionCache(cache_file="vanna_cache.json")
+    else:
+        print("📁 Using file-based cache (persistent on single instance)")
+        custom_cache = PersistentQuestionCache(cache_file="vanna_cache.json")
     
     # Create Flask app with full UI and API
     app = VannaFlaskApp(
