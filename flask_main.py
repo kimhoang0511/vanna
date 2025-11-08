@@ -488,15 +488,32 @@ def main():
             # Step 1: Get count of training data before clearing
             print("🗑️  Clearing training data...")
             training_data_before = vn.get_training_data()
-            training_count_before = len(training_data_before) if training_data_before else 0
+            
+            # Handle both DataFrame and list returns
+            if training_data_before is not None:
+                # Check if it's a DataFrame
+                if hasattr(training_data_before, 'empty'):
+                    # It's a DataFrame
+                    training_count_before = 0 if training_data_before.empty else len(training_data_before)
+                else:
+                    # It's a list or other iterable
+                    training_count_before = len(training_data_before)
+            else:
+                training_count_before = 0
             
             print(f"   Found {training_count_before} training items")
             
             # Step 2: Clear all training data
             training_cleared = 0
             if training_count_before > 0:
+                # Convert to list if it's a DataFrame
+                if hasattr(training_data_before, 'to_dict'):
+                    training_data_list = training_data_before.to_dict(orient='records')
+                else:
+                    training_data_list = training_data_before
+                
                 # Get all training IDs
-                training_ids = [item['id'] for item in training_data_before if 'id' in item]
+                training_ids = [item['id'] for item in training_data_list if 'id' in item]
                 
                 # Remove each item
                 for training_id in training_ids:
@@ -509,7 +526,15 @@ def main():
                 
                 # Verify clearing
                 training_data_after = vn.get_training_data()
-                training_count_after = len(training_data_after) if training_data_after else 0
+                
+                # Handle DataFrame/list for count_after
+                if training_data_after is not None:
+                    if hasattr(training_data_after, 'empty'):
+                        training_count_after = 0 if training_data_after.empty else len(training_data_after)
+                    else:
+                        training_count_after = len(training_data_after)
+                else:
+                    training_count_after = 0
                 
                 print(f"✅ Cleared {training_cleared} training items. {training_count_after} remaining.")
             else:
