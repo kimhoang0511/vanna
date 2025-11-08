@@ -17,6 +17,7 @@ API Endpoints (tự động có sẵn):
     GET  /api/v0/generate_questions - Tạo câu hỏi gợi ý
     GET  /api/v0/generate_sql - Generate SQL từ question
     GET  /api/v0/run_sql - Thực thi SQL
+    GET/POST /api/v0/ask - 🆕 All-in-one: Generate + Run SQL
     POST /api/v0/fix_sql - Tự động sửa lỗi SQL
     POST /api/v0/update_sql - Cập nhật SQL
     GET  /api/v0/generate_plotly_figure - Tạo biểu đồ
@@ -321,6 +322,133 @@ def main():
             "stats": stats
         })
     
+    # Add new endpoint: Ask (Generate + Run SQL in one request)
+    @app.flask_app.route("/api/v0/ask", methods=["GET", "POST"])
+    def ask_question():
+        """
+        All-in-one endpoint: Generate SQL and execute it
+        Similar to n8n workflow 02 (Generate & Run SQL)
+        
+        GET Method:
+            Query params: ?question=Your question here
+            
+        POST Method:
+            JSON body: {"question": "Your question here", "allow_llm_to_see_data": false}
+        
+        Response:
+            {
+                "success": true,
+                "question": "...",
+                "sql": "SELECT ...",
+                "data": [...],
+                "rows_count": 10,
+                "cache_id": "abc123"
+            }
+        """
+        from flask import request, jsonify
+        import pandas as pd
+        
+        # Get question from query params (GET) or JSON body (POST)
+        if request.method == "GET":
+            question = request.args.get("question")
+            allow_llm_to_see_data = request.args.get("allow_llm_to_see_data", "false").lower() == "true"
+        else:  # POST
+            data = request.get_json() or {}
+            question = data.get("question")
+            allow_llm_to_see_data = data.get("allow_llm_to_see_data", False)
+        
+        # Validate question
+        if not question:
+            return jsonify({
+                "success": False,
+                "error": "No question provided",
+                "usage": {
+                    "GET": "?question=Your question here",
+                    "POST": '{"question": "Your question here"}'
+                }
+            }), 400
+        
+        try:
+            # Step 1: Generate SQL
+            print(f"🔍 Question: {question}")
+            cache_id = custom_cache.generate_id(question=question)
+            
+            sql = vn.generate_sql(
+                question=question, 
+                allow_llm_to_see_data=allow_llm_to_see_data
+            )
+            
+            if not sql:
+                return jsonify({
+                    "success": False,
+                    "error": "Failed to generate SQL",
+                    "question": question
+                }), 500
+            
+            print(f"✅ Generated SQL: {sql[:100]}...")
+            
+            # Validate SQL
+            if not vn.is_sql_valid(sql=sql):
+                return jsonify({
+                    "success": False,
+                    "error": "Generated SQL is not valid",
+                    "question": question,
+                    "sql": sql
+                }), 500
+            
+            # Step 2: Execute SQL
+            if not vn.run_sql_is_set:
+                return jsonify({
+                    "success": False,
+                    "error": "Database not connected. Please connect to a database first.",
+                    "question": question,
+                    "sql": sql,
+                    "hint": "Use vn.connect_to_postgres() or similar method"
+                }), 503
+            
+            print(f"⚙️  Executing SQL...")
+            df = vn.run_sql(sql=sql)
+            
+            # Convert DataFrame to JSON
+            if df is not None and not df.empty:
+                data_json = df.to_dict(orient='records')
+                rows_count = len(df)
+                print(f"✅ Query returned {rows_count} rows")
+            else:
+                data_json = []
+                rows_count = 0
+                print(f"⚠️  Query returned no data")
+            
+            # Save to cache
+            custom_cache.set_multiple(cache_id, {
+                "question": question,
+                "sql": sql,
+                "df": df
+            })
+            
+            # Return success response
+            return jsonify({
+                "success": True,
+                "question": question,
+                "sql": sql,
+                "data": data_json,
+                "rows_count": rows_count,
+                "cache_id": cache_id
+            })
+            
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return jsonify({
+                "success": False,
+                "error": str(e),
+                "question": question,
+                "sql": sql if 'sql' in locals() else None,
+                "error_type": type(e).__name__
+            }), 500
+    
     print("=" * 70)
     print("✅ Server is ready!")
     print("=" * 70)
@@ -343,9 +471,12 @@ def main():
     print("   Ví dụ: 'Top 10 khách hàng có doanh thu cao nhất'")
     print()
     print("📖 API Examples:")
-    print(f"   GET  http://localhost:{port}/api/v0/generate_sql?question=Tổng doanh thu là bao nhiêu")
+    print(f"   GET  http://localhost:{port}/api/v0/ask?question=Tổng doanh thu là bao nhiêu")
+    print(f"   GET  http://localhost:{port}/api/v0/generate_sql?question=Top 10 customers")
     print(f"   GET  http://localhost:{port}/api/v0/get_training_data")
     print(f"   POST http://localhost:{port}/api/v0/train")
+    print()
+    print("💡 New: /api/v0/ask endpoint - Generate + Run SQL in one request!")
     print()
     print("Press Ctrl+C to stop the server")
     print("=" * 70)
