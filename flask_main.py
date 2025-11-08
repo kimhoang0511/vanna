@@ -614,6 +614,229 @@ def main():
                 "error_type": type(e).__name__
             }), 500
     
+    # Add new endpoint: Train Batch (Train multiple data in one request)
+    @app.flask_app.route("/api/v0/train_batch", methods=["POST"])
+    def train_batch():
+        """
+        Train multiple data items in a single request
+        
+        This endpoint allows you to submit an array of training data items,
+        which can include combinations of:
+        - question + sql (Question-SQL pairs)
+        - ddl (Database schema definitions)
+        - documentation (Database documentation)
+        
+        POST Method:
+            JSON body: {
+                "training_data": [
+                    {
+                        "question": "Top 10 khách hàng theo doanh thu?",
+                        "sql": "SELECT customer_name, SUM(amount) as revenue FROM orders GROUP BY customer_name ORDER BY revenue DESC LIMIT 10"
+                    },
+                    {
+                        "ddl": "CREATE TABLE orders (id INT, customer_name VARCHAR(100), amount DECIMAL(10,2))"
+                    },
+                    {
+                        "documentation": "Bảng orders chứa tất cả đơn hàng của khách hàng"
+                    },
+                    {
+                        "question": "Tổng doanh thu năm 2024?",
+                        "sql": "SELECT SUM(amount) FROM orders WHERE YEAR(order_date) = 2024"
+                    }
+                ]
+            }
+            
+        Response:
+            {
+                "success": true,
+                "message": "Trained 4 items successfully",
+                "results": {
+                    "total": 4,
+                    "successful": 4,
+                    "failed": 0,
+                    "items": [
+                        {"index": 0, "status": "success", "id": "abc123", "type": "question-sql"},
+                        {"index": 1, "status": "success", "id": "def456", "type": "ddl"},
+                        {"index": 2, "status": "success", "id": "ghi789", "type": "documentation"},
+                        {"index": 3, "status": "success", "id": "jkl012", "type": "question-sql"}
+                    ],
+                    "errors": []
+                }
+            }
+        """
+        from flask import request, jsonify
+        
+        try:
+            # Get JSON body
+            data = request.get_json()
+            
+            if not data:
+                return jsonify({
+                    "success": False,
+                    "error": "No JSON body provided",
+                    "usage": {
+                        "example": {
+                            "training_data": [
+                                {"question": "...", "sql": "..."},
+                                {"ddl": "CREATE TABLE ..."},
+                                {"documentation": "..."}
+                            ]
+                        }
+                    }
+                }), 400
+            
+            # Get training_data array
+            training_data = data.get("training_data")
+            
+            if not training_data:
+                return jsonify({
+                    "success": False,
+                    "error": "No 'training_data' array provided in JSON body",
+                    "usage": {
+                        "example": {
+                            "training_data": [
+                                {"question": "...", "sql": "..."},
+                                {"ddl": "CREATE TABLE ..."}
+                            ]
+                        }
+                    }
+                }), 400
+            
+            if not isinstance(training_data, list):
+                return jsonify({
+                    "success": False,
+                    "error": "'training_data' must be an array",
+                    "received_type": str(type(training_data).__name__)
+                }), 400
+            
+            if len(training_data) == 0:
+                return jsonify({
+                    "success": False,
+                    "error": "'training_data' array is empty"
+                }), 400
+            
+            print(f"📚 Training {len(training_data)} items...")
+            
+            # Track results
+            results = {
+                "total": len(training_data),
+                "successful": 0,
+                "failed": 0,
+                "items": [],
+                "errors": []
+            }
+            
+            # Train each item
+            for index, item in enumerate(training_data):
+                try:
+                    # Extract fields from item
+                    question = item.get("question")
+                    sql = item.get("sql")
+                    ddl = item.get("ddl")
+                    documentation = item.get("documentation")
+                    
+                    # Validate: at least one field must be present
+                    if not any([question, sql, ddl, documentation]):
+                        error_msg = f"Item {index}: No training data provided (need at least one of: question, sql, ddl, documentation)"
+                        print(f"   ⚠️  {error_msg}")
+                        results["failed"] += 1
+                        results["items"].append({
+                            "index": index,
+                            "status": "failed",
+                            "error": error_msg
+                        })
+                        results["errors"].append({
+                            "index": index,
+                            "error": error_msg
+                        })
+                        continue
+                    
+                    # Determine training type
+                    training_type = []
+                    if question and sql:
+                        training_type.append("question-sql")
+                    elif question:
+                        training_type.append("question")
+                    elif sql:
+                        training_type.append("sql")
+                    if ddl:
+                        training_type.append("ddl")
+                    if documentation:
+                        training_type.append("documentation")
+                    
+                    training_type_str = "+".join(training_type)
+                    
+                    # Train this item
+                    print(f"   📝 Training item {index + 1}/{len(training_data)} ({training_type_str})...")
+                    
+                    training_id = vn.train(
+                        question=question,
+                        sql=sql,
+                        ddl=ddl,
+                        documentation=documentation
+                    )
+                    
+                    print(f"   ✅ Trained successfully: {training_id}")
+                    
+                    results["successful"] += 1
+                    results["items"].append({
+                        "index": index,
+                        "status": "success",
+                        "id": training_id,
+                        "type": training_type_str
+                    })
+                    
+                except Exception as item_error:
+                    error_msg = str(item_error)
+                    print(f"   ❌ Failed to train item {index}: {error_msg}")
+                    
+                    results["failed"] += 1
+                    results["items"].append({
+                        "index": index,
+                        "status": "failed",
+                        "error": error_msg
+                    })
+                    results["errors"].append({
+                        "index": index,
+                        "error": error_msg,
+                        "item": item
+                    })
+            
+            # Print summary
+            print(f"✅ Training completed: {results['successful']}/{results['total']} successful, {results['failed']} failed")
+            
+            # Return response
+            if results["failed"] == 0:
+                return jsonify({
+                    "success": True,
+                    "message": f"Trained {results['successful']} items successfully",
+                    "results": results
+                })
+            elif results["successful"] == 0:
+                return jsonify({
+                    "success": False,
+                    "message": f"All {results['failed']} items failed to train",
+                    "results": results
+                }), 500
+            else:
+                return jsonify({
+                    "success": True,
+                    "message": f"Trained {results['successful']}/{results['total']} items successfully, {results['failed']} failed",
+                    "results": results,
+                    "warning": "Some items failed to train"
+                }), 207  # 207 Multi-Status
+                
+        except Exception as e:
+            print(f"❌ Error in train_batch: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return jsonify({
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }), 500
+    
     print("=" * 70)
     print("✅ Server is ready!")
     print("=" * 70)
@@ -640,10 +863,12 @@ def main():
     print(f"   GET  http://localhost:{port}/api/v0/generate_sql?question=Top 10 customers")
     print(f"   GET  http://localhost:{port}/api/v0/get_training_data")
     print(f"   POST http://localhost:{port}/api/v0/train")
+    print(f"   POST http://localhost:{port}/api/v0/train_batch")
     print(f"   POST http://localhost:{port}/api/v0/clear_training_data")
     print()
     print("💡 New Endpoints:")
     print("   - /api/v0/ask - Generate + Run SQL in one request")
+    print("   - /api/v0/train_batch - Train multiple data in one request")
     print("   - /api/v0/clear_training_data - Clear all training data")
     print()
     print("Press Ctrl+C to stop the server")
