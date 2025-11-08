@@ -1,0 +1,109 @@
+{
+  "name": "01 - Simple Generate SQL",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b5c8e5a3-8f3a-4b5a-9c1d-2e3f4a5b6c7d",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "question",
+              "value": "Top 10 khách hàng có doanh thu cao nhất trong năm 2024"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c6d9f6b4-9g4b-5c6b-0d2e-3f4g5b6c7d8e",
+      "name": "Set Question",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/v0/generate_sql",
+        "authentication": "none",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "question",
+                "value": "={{ $json.question }}"
+              }
+            ]
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "d7e0g7c5-0h5c-6d7c-1e3f-4g5h6c7d8e9f",
+      "name": "Generate SQL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and display the generated SQL\nconst response = $input.first().json;\n\nif (response.type === 'sql') {\n  return {\n    json: {\n      success: true,\n      cache_id: response.id,\n      sql: response.text,\n      type: response.type\n    }\n  };\n} else {\n  return {\n    json: {\n      success: false,\n      message: 'Failed to generate SQL',\n      response: response\n    }\n  };\n}"
+      },
+      "id": "e8f1h8d6-1i6d-7e8d-2f4g-5h6i7d8e9f0g",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [
+        [
+          {
+            "node": "Set Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Question": {
+      "main": [
+        [
+          {
+            "node": "Generate SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate SQL": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "vanna-instance"
+  },
+  "id": "workflow-01",
+  "tags": []
+}

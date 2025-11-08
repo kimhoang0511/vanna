@@ -31,6 +31,12 @@ class PostgresCache(Cache):
         """
         self.connection_params = connection_params
         
+        # Add default timeout and SSL if not provided
+        if 'connect_timeout' not in self.connection_params:
+            self.connection_params['connect_timeout'] = 30
+        if 'sslmode' not in self.connection_params:
+            self.connection_params['sslmode'] = 'prefer'
+        
         # Create connection pool
         try:
             self.connection_pool = pool.SimpleConnectionPool(

@@ -25,6 +25,7 @@ API Endpoints (tự động có sẵn):
     GET  /api/v0/get_training_data - Lấy training data
     POST /api/v0/train - Thêm training data
     POST /api/v0/remove_training_data - Xóa training data
+    POST /api/v0/clear_training_data - 🆕 Xóa TẤT CẢ training data
     GET  /api/v0/generate_followup_questions - Câu hỏi follow-up
     GET  /api/v0/generate_summary - Tóm tắt kết quả
     GET  /api/v0/load_question - Load lại câu hỏi từ cache
@@ -449,6 +450,145 @@ def main():
                 "error_type": type(e).__name__
             }), 500
     
+    # Add new endpoint: Clear Training Data
+    @app.flask_app.route("/api/v0/clear_training_data", methods=["POST"])
+    def clear_training_data():
+        """
+        Clear all training data from Vanna AND clear cache
+        
+        ⚠️ WARNING: This will delete ALL:
+        - Training data (DDL, Documentation, SQL examples)
+        - Cache data (vanna_cache table in PostgreSQL)
+        
+        Use this before retraining with new data to avoid conflicts.
+        
+        POST Method:
+            No body required
+            
+        Response:
+            {
+                "success": true,
+                "message": "Training data and cache cleared successfully",
+                "data": {
+                    "training": {
+                        "count_before": 15,
+                        "count_after": 0,
+                        "cleared": 15
+                    },
+                    "cache": {
+                        "count_before": 50,
+                        "cleared": 50
+                    }
+                }
+            }
+        """
+        from flask import jsonify
+        
+        try:
+            # Step 1: Get count of training data before clearing
+            print("🗑️  Clearing training data...")
+            training_data_before = vn.get_training_data()
+            training_count_before = len(training_data_before) if training_data_before else 0
+            
+            print(f"   Found {training_count_before} training items")
+            
+            # Step 2: Clear all training data
+            training_cleared = 0
+            if training_count_before > 0:
+                # Get all training IDs
+                training_ids = [item['id'] for item in training_data_before if 'id' in item]
+                
+                # Remove each item
+                for training_id in training_ids:
+                    try:
+                        vn.remove_training_data(id=training_id)
+                        training_cleared += 1
+                        print(f"   ✅ Removed training: {training_id}")
+                    except Exception as e:
+                        print(f"   ⚠️  Failed to remove training {training_id}: {str(e)}")
+                
+                # Verify clearing
+                training_data_after = vn.get_training_data()
+                training_count_after = len(training_data_after) if training_data_after else 0
+                
+                print(f"✅ Cleared {training_cleared} training items. {training_count_after} remaining.")
+            else:
+                training_count_after = 0
+                print("⚠️  No training data to clear")
+            
+            # Step 3: Clear cache from vanna_cache table
+            print("🗑️  Clearing cache from vanna_cache table...")
+            cache_cleared = 0
+            cache_count_before = 0
+            
+            try:
+                # Check if using PostgreSQL cache
+                if isinstance(custom_cache, PostgresCache):
+                    import psycopg2
+                    
+                    # Connect to database
+                    conn = psycopg2.connect(**db_params)
+                    cursor = conn.cursor()
+                    
+                    # Get count before clearing
+                    cursor.execute("SELECT COUNT(*) FROM vanna_cache")
+                    cache_count_before = cursor.fetchone()[0]
+                    print(f"   Found {cache_count_before} cache entries")
+                    
+                    # Clear all cache entries
+                    if cache_count_before > 0:
+                        cursor.execute("DELETE FROM vanna_cache")
+                        cache_cleared = cursor.rowcount
+                        conn.commit()
+                        print(f"✅ Cleared {cache_cleared} cache entries")
+                    else:
+                        print("⚠️  No cache entries to clear")
+                    
+                    cursor.close()
+                    conn.close()
+                else:
+                    # File-based cache
+                    print("   Using file-based cache - clearing in-memory cache...")
+                    if hasattr(custom_cache, 'cache'):
+                        cache_count_before = len(custom_cache.cache)
+                        custom_cache.cache = {}
+                        cache_cleared = cache_count_before
+                        print(f"✅ Cleared {cache_cleared} cache entries from file cache")
+                    else:
+                        print("⚠️  No cache to clear")
+                        
+            except Exception as cache_error:
+                print(f"⚠️  Warning: Failed to clear cache: {str(cache_error)}")
+                # Continue execution even if cache clearing fails
+            
+            # Step 4: Return response
+            return jsonify({
+                "success": True,
+                "message": f"Cleared {training_cleared} training items and {cache_cleared} cache entries",
+                "data": {
+                    "training": {
+                        "count_before": training_count_before,
+                        "count_after": training_count_after,
+                        "cleared": training_cleared
+                    },
+                    "cache": {
+                        "count_before": cache_count_before,
+                        "cleared": cache_cleared
+                    }
+                }
+            })
+                
+        except Exception as e:
+            print(f"❌ Error clearing training data: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            return jsonify({
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }), 500
+    
     print("=" * 70)
     print("✅ Server is ready!")
     print("=" * 70)
@@ -475,8 +615,11 @@ def main():
     print(f"   GET  http://localhost:{port}/api/v0/generate_sql?question=Top 10 customers")
     print(f"   GET  http://localhost:{port}/api/v0/get_training_data")
     print(f"   POST http://localhost:{port}/api/v0/train")
+    print(f"   POST http://localhost:{port}/api/v0/clear_training_data")
     print()
-    print("💡 New: /api/v0/ask endpoint - Generate + Run SQL in one request!")
+    print("💡 New Endpoints:")
+    print("   - /api/v0/ask - Generate + Run SQL in one request")
+    print("   - /api/v0/clear_training_data - Clear all training data")
     print()
     print("Press Ctrl+C to stop the server")
     print("=" * 70)

@@ -1,0 +1,191 @@
+{
+  "name": "04 - Webhook Chatbot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vanna-chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-01-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [240, 300],
+      "webhookId": "vanna-chat-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.question }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "webhook-02-validate",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"Question is required\",\n  \"usage\": \"POST /vanna-chat with body: { \\\"question\\\": \\\"Your question here\\\" }\"\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "webhook-03-error",
+      "name": "Return Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 180]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/v0/generate_sql",
+        "authentication": "none",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "question",
+                "value": "={{ $json.body.question }}"
+              }
+            ]
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "webhook-04-generate",
+      "name": "Generate SQL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 420]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/v0/run_sql",
+        "authentication": "none",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $json.id }}"
+              }
+            ]
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "webhook-05-run",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format response for chatbot\nconst question = $('Webhook').first().json.body.question;\nconst sqlResponse = $('Generate SQL').first().json;\nconst runResponse = $input.first().json;\n\nlet response = {\n  success: false,\n  question: question,\n  sql: sqlResponse.text || 'N/A',\n  data: null,\n  error: null\n};\n\nif (runResponse.type === 'df') {\n  const data = JSON.parse(runResponse.df);\n  response.success = true;\n  response.data = data;\n  response.rows_count = data.length;\n  \n  // Create a simple text summary\n  if (data.length === 0) {\n    response.summary = 'Không tìm thấy dữ liệu.';\n  } else if (data.length === 1) {\n    // Single row - format as key-value\n    const row = data[0];\n    response.summary = Object.entries(row)\n      .map(([key, value]) => `${key}: ${value}`)\n      .join('\\n');\n  } else {\n    // Multiple rows - create table-like summary\n    response.summary = `Tìm thấy ${data.length} kết quả.\\n\\n` +\n      data.slice(0, 5).map((row, idx) => \n        `${idx + 1}. ` + Object.entries(row)\n          .map(([key, value]) => `${key}: ${value}`)\n          .join(', ')\n      ).join('\\n');\n    \n    if (data.length > 5) {\n      response.summary += `\\n... và ${data.length - 5} kết quả khác`;\n    }\n  }\n} else if (runResponse.type === 'sql_error') {\n  response.error = runResponse.error;\n  response.summary = `Lỗi khi thực thi SQL: ${runResponse.error}`;\n} else {\n  response.error = 'Unexpected response type';\n  response.summary = 'Có lỗi xảy ra khi xử lý câu hỏi.';\n}\n\nreturn { json: response };"
+      },
+      "id": "webhook-06-format",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json, null, 2) }}",
+        "options": {}
+      },
+      "id": "webhook-07-respond",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 420]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Generate SQL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "vanna-instance"
+  },
+  "id": "workflow-04",
+  "tags": []
+}

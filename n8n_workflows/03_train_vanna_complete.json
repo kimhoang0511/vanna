@@ -1,0 +1,309 @@
+{
+  "name": "03 - Train Vanna (Complete)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "train-01-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 400]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "train_ddl",
+              "value": "CREATE TABLE public.customers (\n    id SERIAL PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    email VARCHAR(100) UNIQUE,\n    country VARCHAR(50),\n    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n);\n\nCREATE TABLE public.orders (\n    id SERIAL PRIMARY KEY,\n    customer_id INTEGER REFERENCES customers(id),\n    order_date DATE NOT NULL,\n    total_amount DECIMAL(10,2),\n    status VARCHAR(20)\n);\n\nCREATE TABLE public.products (\n    id SERIAL PRIMARY KEY,\n    name VARCHAR(100) NOT NULL,\n    category VARCHAR(50),\n    price DECIMAL(10,2)\n);"
+            },
+            {
+              "name": "train_documentation",
+              "value": "# Hệ thống Quản lý Bán hàng\n\n## Bảng customers (Khách hàng)\n- id: Mã khách hàng (tự động tăng)\n- name: Tên đầy đủ của khách hàng\n- email: Địa chỉ email (không trùng lặp)\n- country: Quốc gia (ISO code: VN, US, JP...)\n- created_at: Thời điểm tạo tài khoản\n\n## Bảng orders (Đơn hàng)\n- id: Mã đơn hàng\n- customer_id: Liên kết với customers.id\n- order_date: Ngày đặt hàng\n- total_amount: Tổng giá trị đơn hàng (có thể NULL nếu chưa tính)\n- status: Trạng thái (pending, completed, cancelled)\n\n## Bảng products (Sản phẩm)\n- id: Mã sản phẩm\n- name: Tên sản phẩm\n- category: Danh mục (electronics, clothing, food...)\n- price: Giá bán\n\n## Business Rules\n- Sử dụng total_amount::numeric để tính toán với DECIMAL\n- Đơn hàng có status='completed' mới được tính doanh thu\n- Country code theo chuẩn ISO 3166-1 alpha-2"
+            },
+            {
+              "name": "train_sql_question_1",
+              "value": "Tổng số khách hàng hiện tại"
+            },
+            {
+              "name": "train_sql_1",
+              "value": "SELECT COUNT(*) as total_customers FROM customers;"
+            },
+            {
+              "name": "train_sql_question_2",
+              "value": "Top 10 quốc gia có nhiều khách hàng nhất"
+            },
+            {
+              "name": "train_sql_2",
+              "value": "SELECT country, COUNT(*) as customer_count \nFROM customers \nGROUP BY country \nORDER BY customer_count DESC \nLIMIT 10;"
+            },
+            {
+              "name": "train_sql_question_3",
+              "value": "Doanh thu theo tháng trong năm 2024"
+            },
+            {
+              "name": "train_sql_3",
+              "value": "SELECT \n    EXTRACT(MONTH FROM order_date) as month,\n    SUM(total_amount::numeric) as revenue\nFROM orders\nWHERE EXTRACT(YEAR FROM order_date) = 2024\n    AND status = 'completed'\nGROUP BY month\nORDER BY month;"
+            }
+          ]
+        }
+      },
+      "id": "train-02-set",
+      "name": "Set Training Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/clear_training_data",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-03-clear",
+      "name": "Clear Training Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v0/train",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ddl\": \"{{ $('Set Training Data').item.json.train_ddl }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-04-ddl",
+      "name": "Train DDL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v0/train",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"documentation\": \"{{ $('Set Training Data').item.json.train_documentation }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-05-doc",
+      "name": "Train Documentation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v0/train",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"question\": \"{{ $('Set Training Data').item.json.train_sql_question_1 }}\",\n  \"sql\": \"{{ $('Set Training Data').item.json.train_sql_1 }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-06-sql1",
+      "name": "Train SQL Example 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v0/train",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"question\": \"{{ $('Set Training Data').item.json.train_sql_question_2 }}\",\n  \"sql\": \"{{ $('Set Training Data').item.json.train_sql_2 }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-07-sql2",
+      "name": "Train SQL Example 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8000/api/v0/train",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"question\": \"{{ $('Set Training Data').item.json.train_sql_question_3 }}\",\n  \"sql\": \"{{ $('Set Training Data').item.json.train_sql_3 }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-08-sql3",
+      "name": "Train SQL Example 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/v0/get_training_data",
+        "authentication": "none",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "train-09-verify",
+      "name": "Verify Training Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1560, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Summarize training results\nconst verifyResponse = $input.first().json;\n\nconst trainingItems = verifyResponse.data || [];\nconst summary = {\n  success: true,\n  total_items: trainingItems.length,\n  breakdown: {\n    ddl: 0,\n    documentation: 0,\n    sql: 0\n  },\n  items: trainingItems\n};\n\n// Count by type\ntrainingItems.forEach(item => {\n  if (item.training_data_type === 'ddl') summary.breakdown.ddl++;\n  if (item.training_data_type === 'documentation') summary.breakdown.documentation++;\n  if (item.training_data_type === 'sql') summary.breakdown.sql++;\n});\n\nreturn { json: summary };"
+      },
+      "id": "train-10-summary",
+      "name": "Training Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Training Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Training Data": {
+      "main": [
+        [
+          {
+            "node": "Clear Training Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Training Data": {
+      "main": [
+        [
+          {
+            "node": "Train DDL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Train DDL": {
+      "main": [
+        [
+          {
+            "node": "Train Documentation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Train Documentation": {
+      "main": [
+        [
+          {
+            "node": "Train SQL Example 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Train SQL Example 2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Train SQL Example 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Train SQL Example 1": {
+      "main": [
+        [
+          {
+            "node": "Verify Training Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Train SQL Example 2": {
+      "main": [
+        [
+          {
+            "node": "Verify Training Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Train SQL Example 3": {
+      "main": [
+        [
+          {
+            "node": "Verify Training Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Training Data": {
+      "main": [
+        [
+          {
+            "node": "Training Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "vanna-instance"
+  },
+  "id": "workflow-03",
+  "tags": []
+}

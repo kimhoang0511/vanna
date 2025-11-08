@@ -1,14 +1,27 @@
 # Nixpacks configuration for Railway deployment
-# Railway will automatically detect Python and install dependencies
+# Optimized for faster builds
 
 [phases.setup]
-nixPkgs = ["python311"]
+# Only essential system packages
+nixPkgs = ["python311", "postgresql"]
+aptPkgs = []
 
 [phases.install]
+# Use pip cache and parallel installs for speed
 cmds = [
-  "pip install --upgrade pip",
-  "pip install -r requirements.txt"
+  "pip install --upgrade pip setuptools wheel",
+  "pip install --no-cache-dir --compile -r requirements.txt"
 ]
+
+[phases.build]
+cmds = []
 
 [start]
 cmd = "python flask_main.py"
+
+[variables]
+# Force pip to use binary wheels when available
+PIP_PREFER_BINARY = "1"
+# Optimize Python startup
+PYTHONUNBUFFERED = "1"
+PYTHONDONTWRITEBYTECODE = "1"

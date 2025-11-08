@@ -1,0 +1,236 @@
+{
+  "name": "05 - Scheduled Report (Daily)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-01-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "report_questions",
+              "value": "[\"Tổng doanh thu hôm qua\", \"Top 10 sản phẩm bán chạy nhất hôm qua\", \"Số lượng đơn hàng mới hôm qua\"]"
+            },
+            {
+              "name": "email_to",
+              "value": "manager@company.com"
+            },
+            {
+              "name": "email_subject",
+              "value": "Báo cáo Doanh số Hàng ngày - {{ $now.format('DD/MM/YYYY') }}"
+            }
+          ]
+        }
+      },
+      "id": "schedule-02-config",
+      "name": "Set Report Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "report_questions",
+        "options": {}
+      },
+      "id": "schedule-03-split",
+      "name": "Split Questions",
+      "type": "n8n-nodes-base.itemLists",
+      "typeVersion": 3.2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/v0/generate_sql",
+        "authentication": "none",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "question",
+                "value": "={{ $json.report_questions }}"
+              }
+            ]
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "schedule-04-generate",
+      "name": "Generate SQL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/v0/run_sql",
+        "authentication": "none",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "id",
+                "value": "={{ $json.id }}"
+              }
+            ]
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "schedule-05-run",
+      "name": "Run SQL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "schedule-06-aggregate",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format all results into email body\nconst items = $input.all();\nconst date = new Date().toLocaleDateString('vi-VN');\n\nlet emailBody = `<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; }\n    h1 { color: #333; }\n    h2 { color: #666; margin-top: 30px; }\n    table { border-collapse: collapse; width: 100%; margin: 20px 0; }\n    th { background-color: #4CAF50; color: white; padding: 12px; text-align: left; }\n    td { border: 1px solid #ddd; padding: 8px; }\n    tr:nth-child(even) { background-color: #f2f2f2; }\n    .sql-block { background-color: #f4f4f4; padding: 10px; border-radius: 5px; font-family: monospace; white-space: pre-wrap; }\n    .summary { background-color: #e7f3fe; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0; }\n  </style>\n</head>\n<body>\n  <h1>📊 Báo cáo Doanh số Hàng ngày</h1>\n  <p><strong>Ngày:</strong> ${date}</p>\n  <div class=\"summary\">\n    <strong>Tóm tắt:</strong> Báo cáo bao gồm ${items.length} phân tích.\n  </div>\n`;\n\nlet totalRevenue = 0;\nlet totalOrders = 0;\n\nitems.forEach((item, index) => {\n  const question = $('Split Questions').item(index).json.report_questions;\n  const sqlResponse = $('Generate SQL').item(index).json;\n  const runResponse = item.json;\n  \n  emailBody += `<h2>📌 ${question}</h2>`;\n  emailBody += `<div class=\"sql-block\">${sqlResponse.text}</div>`;\n  \n  if (runResponse.type === 'df') {\n    const data = JSON.parse(runResponse.df);\n    \n    if (data.length > 0) {\n      // Create HTML table\n      emailBody += '<table>';\n      \n      // Header\n      emailBody += '<tr>';\n      Object.keys(data[0]).forEach(key => {\n        emailBody += `<th>${key}</th>`;\n      });\n      emailBody += '</tr>';\n      \n      // Rows (max 20)\n      data.slice(0, 20).forEach(row => {\n        emailBody += '<tr>';\n        Object.values(row).forEach(value => {\n          emailBody += `<td>${value !== null ? value : 'N/A'}</td>`;\n        });\n        emailBody += '</tr>';\n      });\n      \n      emailBody += '</table>';\n      \n      if (data.length > 20) {\n        emailBody += `<p><em>... và ${data.length - 20} kết quả khác</em></p>`;\n      }\n    } else {\n      emailBody += '<p><em>Không có dữ liệu</em></p>';\n    }\n  } else if (runResponse.type === 'sql_error') {\n    emailBody += `<p style=\"color: red;\"><strong>Lỗi:</strong> ${runResponse.error}</p>`;\n  }\n});\n\nemailBody += `\n  <hr>\n  <p style=\"color: #999; font-size: 12px;\">\n    Báo cáo tự động được tạo bởi Vanna AI SQL Assistant<br>\n    Thời gian tạo: ${new Date().toLocaleString('vi-VN')}\n  </p>\n</body>\n</html>`;\n\nconst config = $('Set Report Config').first().json;\n\nreturn {\n  json: {\n    to: config.email_to,\n    subject: config.email_subject,\n    html: emailBody\n  }\n};"
+      },
+      "id": "schedule-07-format",
+      "name": "Format Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "operation": "sendEmail",
+        "email": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "schedule-08-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1780, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "1",
+          "name": "Gmail account"
+        }
+      },
+      "disabled": true,
+      "notes": "⚠️ Configure Gmail credentials or replace with SMTP node"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Report Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Report Config": {
+      "main": [
+        [
+          {
+            "node": "Split Questions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Questions": {
+      "main": [
+        [
+          {
+            "node": "Generate SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate SQL": {
+      "main": [
+        [
+          {
+            "node": "Run SQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run SQL": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Format Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Email": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "vanna-instance"
+  },
+  "id": "workflow-05",
+  "tags": []
+}
