@@ -14,6 +14,8 @@ chromadb==0.6.3
 # LLM & Embeddings
 openai==2.6.1
 huggingface-hub==0.36.0
+google-generativeai>=0.3.0  # Google Gemini support
+google-cloud-aiplatform>=1.38.0  # Required for VertexAI
 
 # Flask Web Framework
 flask==3.0.0
