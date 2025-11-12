@@ -44,6 +44,7 @@ from vanna.chromadb import ChromaDB_VectorStore
 from vanna.flask import VannaFlaskApp
 from vanna_cache_fix import QuestionHashCache, PersistentQuestionCache
 from postgres_cache import PostgresCache
+import plotly.graph_objects as go
 
 # ============================================================================
 # Define Custom Vanna Classes
@@ -515,8 +516,22 @@ def main():
                             
                             print(f"📸 Converting chart to PNG...")
                             
+                            # Ensure figure has proper layout before PNG conversion
+                            # Re-create figure from JSON to avoid any state issues
+                            import json
+                            fig_data = json.loads(chart_json)
+                            fig_for_png = go.Figure(data=fig_data['data'], layout=fig_data['layout'])
+                            
                             # Convert Plotly figure to PNG bytes
-                            img_bytes = fig.to_image(format="png", width=1200, height=800, scale=2)
+                            img_bytes = fig_for_png.to_image(format="png", width=1200, height=800, scale=2)
+                            
+                            print(f"✅ PNG created: {len(img_bytes):,} bytes")
+                            print(f"   Figure data - traces: {len(fig_for_png.data)}")
+                            if len(fig_for_png.data) > 0:
+                                trace = fig_for_png.data[0]
+                                if hasattr(trace, 'y') and trace.y:
+                                    print(f"   Y data points: {len(trace.y)}")
+                                    print(f"   Y sample: {list(trace.y)[:5] if len(trace.y) >= 5 else list(trace.y)}")
                             
                             print(f"☁️  Uploading to ImgBB...")
                             
