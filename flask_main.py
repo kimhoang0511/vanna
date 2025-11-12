@@ -478,6 +478,8 @@ def main():
             
             # Step 3: Generate chart if data is suitable
             chart_json = None
+            chart_image_url = None
+            chart_html_url = None
             should_generate_chart = False
             
             if df is not None and not df.empty:
@@ -505,6 +507,172 @@ def main():
                         chart_json = fig.to_json()
                         print(f"✅ Chart generated successfully")
                         
+                        # Convert chart to PNG and upload to image hosting
+                        try:
+                            import io
+                            import base64
+                            import requests as req
+                            
+                            print(f"📸 Converting chart to PNG...")
+                            
+                            # Convert Plotly figure to PNG bytes
+                            img_bytes = fig.to_image(format="png", width=1200, height=800, scale=2)
+                            
+                            print(f"☁️  Uploading to ImgBB...")
+                            
+                            # Upload to ImgBB (free, no account needed)
+                            imgbb_api_key = os.getenv("IMGBB_API_KEY", "")
+                            
+                            if imgbb_api_key:
+                                # Encode image to base64
+                                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                                
+                                # Upload to ImgBB
+                                upload_response = req.post(
+                                    "https://api.imgbb.com/1/upload",
+                                    data={
+                                        "key": imgbb_api_key,
+                                        "image": img_base64,
+                                        "name": f"vanna_chart_{cache_id[:8]}"
+                                    },
+                                    timeout=30
+                                )
+                                
+                                if upload_response.status_code == 200:
+                                    upload_data = upload_response.json()
+                                    if upload_data.get('success'):
+                                        chart_image_url = upload_data['data']['url']
+                                        
+                                        # Create HTML page with image
+                                        html_content = f"""<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vanna Chart - {question}</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
+        .container {{
+            max-width: 1400px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }}
+        .header h1 {{ font-size: 32px; margin-bottom: 10px; }}
+        .header p {{ font-size: 16px; opacity: 0.9; }}
+        .content {{ padding: 40px; text-align: center; }}
+        .chart-image {{ 
+            max-width: 100%; 
+            height: auto; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }}
+        .chart-image:hover {{ transform: scale(1.02); }}
+        .info {{ 
+            background: #f8f9fa; 
+            padding: 20px; 
+            border-radius: 8px; 
+            margin-top: 30px;
+            text-align: left;
+        }}
+        .badge {{
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            margin: 5px;
+        }}
+        .footer {{
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+            border-top: 1px solid #e0e0e0;
+        }}
+        a {{ color: #667eea; text-decoration: none; }}
+        a:hover {{ text-decoration: underline; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 {question}</h1>
+            <p>Generated by Vanna AI • Chart Image</p>
+        </div>
+        <div class="content">
+            <img src="{chart_image_url}" alt="Chart" class="chart-image" onclick="window.open('{chart_image_url}', '_blank')">
+            <div class="info">
+                <h3 style="margin-bottom: 15px;">📋 Query Info</h3>
+                <p><span class="badge">Rows</span>{rows_count} rows</p>
+                <p><span class="badge">Format</span>PNG Image (1200x800)</p>
+                <p><span class="badge">Hosted</span>ImgBB Cloud</p>
+                <p style="margin-top: 15px;"><strong>Direct Image URL:</strong></p>
+                <p><a href="{chart_image_url}" target="_blank">{chart_image_url}</a></p>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Powered by Vanna.AI + Plotly + ImgBB</p>
+            <p style="margin-top: 8px; font-size: 12px;">
+                Click image to open in new tab • Right-click to download
+            </p>
+        </div>
+    </div>
+</body>
+</html>"""
+                                        
+                                        # Upload HTML to tmpfiles.org (free temporary file hosting)
+                                        html_upload_response = req.post(
+                                            "https://tmpfiles.org/api/v1/upload",
+                                            files={'file': ('chart.html', html_content.encode('utf-8'), 'text/html')},
+                                            timeout=30
+                                        )
+                                        
+                                        if html_upload_response.status_code == 200:
+                                            html_data = html_upload_response.json()
+                                            if html_data.get('status') == 'success':
+                                                # tmpfiles.org returns URL like https://tmpfiles.org/123456
+                                                # Need to change to https://tmpfiles.org/dl/123456 for direct access
+                                                temp_url = html_data['data']['url']
+                                                chart_html_url = temp_url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+                                                print(f"✅ Chart HTML uploaded: {chart_html_url}")
+                                        
+                                        print(f"✅ Chart image uploaded: {chart_image_url}")
+                                    else:
+                                        print(f"⚠️  ImgBB upload failed: {upload_data.get('error', {}).get('message')}")
+                                else:
+                                    print(f"⚠️  ImgBB upload failed: HTTP {upload_response.status_code}")
+                            else:
+                                print(f"⚠️  IMGBB_API_KEY not set, skipping image upload")
+                                print(f"   Get free API key at: https://api.imgbb.com/")
+                                
+                        except ImportError:
+                            print(f"⚠️  kaleido not installed, skipping PNG conversion")
+                            print(f"   Install with: pip install kaleido")
+                        except Exception as img_error:
+                            print(f"⚠️  Image upload failed: {str(img_error)}")
+                            import traceback
+                            traceback.print_exc()
+                        
                     except Exception as chart_error:
                         print(f"⚠️  Chart generation failed: {str(chart_error)}")
                         # Continue without chart - not a critical error
@@ -526,6 +694,17 @@ def main():
             if chart_json:
                 response_data["chart"] = chart_json
                 response_data["has_chart"] = True
+                
+                # Add image URL if uploaded
+                if chart_image_url:
+                    response_data["chart_image_url"] = chart_image_url
+                    response_data["chart_image_format"] = "png"
+                    response_data["chart_image_size"] = "1200x800"
+                
+                # Add HTML URL if uploaded
+                if chart_html_url:
+                    response_data["chart_html_url"] = chart_html_url
+                    response_data["chart_html_note"] = "Temporary URL (expires after period of inactivity)"
             else:
                 response_data["has_chart"] = False
             
