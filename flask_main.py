@@ -476,15 +476,60 @@ def main():
                 "df": df
             })
             
-            # Return success response
-            return jsonify({
+            # Step 3: Generate chart if data is suitable
+            chart_json = None
+            should_generate_chart = False
+            
+            if df is not None and not df.empty:
+                should_generate_chart = vn.should_generate_chart(df)
+                
+                if should_generate_chart:
+                    try:
+                        print(f"📊 Generating chart...")
+                        
+                        # Generate Plotly code
+                        plotly_code = vn.generate_plotly_code(
+                            question=question,
+                            sql=sql,
+                            df_metadata=f"Running df.dtypes gives:\n{df.dtypes}"
+                        )
+                        
+                        # Create Plotly figure
+                        fig = vn.get_plotly_figure(
+                            plotly_code=plotly_code,
+                            df=df,
+                            dark_mode=False
+                        )
+                        
+                        # Convert to JSON
+                        chart_json = fig.to_json()
+                        print(f"✅ Chart generated successfully")
+                        
+                    except Exception as chart_error:
+                        print(f"⚠️  Chart generation failed: {str(chart_error)}")
+                        # Continue without chart - not a critical error
+                        import traceback
+                        traceback.print_exc()
+            
+            # Return success response with optional chart
+            response_data = {
                 "success": True,
                 "question": question,
                 "sql": sql,
                 "data": data_json,
                 "rows_count": rows_count,
-                "cache_id": cache_id
-            })
+                "cache_id": cache_id,
+                "should_generate_chart": should_generate_chart
+            }
+            
+            # Add chart if generated
+            if chart_json:
+                response_data["chart"] = chart_json
+                response_data["has_chart"] = True
+            else:
+                response_data["has_chart"] = False
+            
+            return jsonify(response_data)
             
         except Exception as e:
             print(f"❌ Error: {str(e)}")
