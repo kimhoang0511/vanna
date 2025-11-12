@@ -41,21 +41,38 @@ load_dotenv()
 from vietnamese_vanna import VietnameseVanna
 from bge_m3_embedding import BGE_M3_EmbeddingFunction
 from vanna.chromadb import ChromaDB_VectorStore
-from vanna.openai import OpenAI_Chat
 from vanna.flask import VannaFlaskApp
 from vanna_cache_fix import QuestionHashCache, PersistentQuestionCache
 from postgres_cache import PostgresCache
 
 # ============================================================================
-# Define Custom Vanna Class
+# Define Custom Vanna Classes
 # ============================================================================
 
-class MyVanna(VietnameseVanna, ChromaDB_VectorStore, OpenAI_Chat):
-    """Custom Vanna class kết hợp Vietnamese support + ChromaDB + OpenAI"""
+# Determine which LLM to use based on environment variable
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").lower()  # Default: gemini
+
+if LLM_PROVIDER == "openai":
+    print("🤖 Using OpenAI as LLM provider")
+    from vanna.openai import OpenAI_Chat
     
-    def __init__(self, config=None):
-        ChromaDB_VectorStore.__init__(self, config=config)
-        OpenAI_Chat.__init__(self, config=config)
+    class MyVanna(VietnameseVanna, ChromaDB_VectorStore, OpenAI_Chat):
+        """Custom Vanna class with Vietnamese support + ChromaDB + OpenAI"""
+        
+        def __init__(self, config=None):
+            ChromaDB_VectorStore.__init__(self, config=config)
+            OpenAI_Chat.__init__(self, config=config)
+
+elif LLM_PROVIDER == "gemini":
+    print("🤖 Using Google Gemini as LLM provider")
+    from vietnamese_vanna_gemini import VietnameseVannaGemini
+    
+    class MyVanna(VietnameseVannaGemini):
+        """Custom Vanna class with Vietnamese support + ChromaDB + Gemini"""
+        pass
+
+else:
+    raise ValueError(f"Unsupported LLM_PROVIDER: {LLM_PROVIDER}. Use 'openai' or 'gemini'")
 
 
 # ============================================================================
@@ -65,40 +82,72 @@ class MyVanna(VietnameseVanna, ChromaDB_VectorStore, OpenAI_Chat):
 def initialize_vanna():
     """Initialize Vanna with BGE-M3 embedding and Vietnamese support"""
     
-    # Get API keys from environment
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    # Get LLM provider
+    llm_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+    
+    # Get Hugging Face API key for embeddings (optional)
     huggingface_api_key = os.getenv("HUGGINGFACE_API_KEY")
     
-    if not openai_api_key:
-        raise ValueError(
-            "OPENAI_API_KEY not found in environment variables. "
-            "Please set it in .env file or export it."
-        )
+    # Initialize embedding function
+    if huggingface_api_key:
+        print("🔧 Initializing BGE-M3 Embedding Function...")
+        bge_m3_ef = BGE_M3_EmbeddingFunction(api_key=huggingface_api_key)
+    else:
+        print("⚠️  HUGGINGFACE_API_KEY not found. Using default ChromaDB embeddings.")
+        bge_m3_ef = None
     
-    if not huggingface_api_key:
-        raise ValueError(
-            "HUGGINGFACE_API_KEY not found in environment variables. "
-            "Please set it in .env file or export it."
-        )
+    print(f"🔧 Initializing Vanna with {llm_provider.upper()} provider...")
     
-    print("🔧 Initializing BGE-M3 Embedding Function...")
-    bge_m3_ef = BGE_M3_EmbeddingFunction(api_key=huggingface_api_key)
+    # Configure based on LLM provider
+    if llm_provider == "openai":
+        # OpenAI Configuration
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        
+        if not openai_api_key:
+            raise ValueError(
+                "OPENAI_API_KEY not found in environment variables. "
+                "Please set it in .env file or export it."
+            )
+        
+        config = {
+            'model': os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            'api_key': openai_api_key,
+            'embedding_function': bge_m3_ef,
+            'temperature': float(os.getenv("OPENAI_TEMPERATURE", "0.7")),
+            'n_results_sql': int(os.getenv("VANNA_N_RESULTS_SQL", "5")),
+            'n_results_ddl': int(os.getenv("VANNA_N_RESULTS_DDL", "3")),
+            'n_results_documentation': int(os.getenv("VANNA_N_RESULTS_DOCUMENTATION", "7")),
+            'language': 'Vietnamese'
+        }
+        
+    elif llm_provider == "gemini":
+        # Gemini Configuration
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        
+        if not google_api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY not found in environment variables. "
+                "Please set it in .env file or export it. "
+                "Get FREE API key at: https://makersuite.google.com/app/apikey"
+            )
+        
+        config = {
+            'api_key': google_api_key,
+            'model_name': os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp"),
+            'embedding_function': bge_m3_ef,
+            'temperature': float(os.getenv("GEMINI_TEMPERATURE", "0.7")),
+            'n_results_sql': int(os.getenv("VANNA_N_RESULTS_SQL", "5")),
+            'n_results_ddl': int(os.getenv("VANNA_N_RESULTS_DDL", "3")),
+            'n_results_documentation': int(os.getenv("VANNA_N_RESULTS_DOCUMENTATION", "7")),
+            'language': 'Vietnamese'
+        }
     
-    print("🔧 Initializing Vanna with Vietnamese support...")
-    config = {
-        'model': os.getenv("VANNA_MODEL", "gpt-4o-mini"),
-        'api_key': openai_api_key,
-        'embedding_function': bge_m3_ef,
-        'temperature': float(os.getenv("VANNA_TEMPERATURE", "0.7")),
-        'n_results_sql': int(os.getenv("VANNA_N_RESULTS_SQL", "5")),
-        'n_results_ddl': int(os.getenv("VANNA_N_RESULTS_DDL", "3")),
-        'n_results_documentation': int(os.getenv("VANNA_N_RESULTS_DOCUMENTATION", "7")),
-        'language': 'Vietnamese'
-    }
+    else:
+        raise ValueError(f"Unsupported LLM_PROVIDER: {llm_provider}")
     
     vn = MyVanna(config=config)
     
-    print("✅ Vanna initialized successfully!")
+    print(f"✅ Vanna initialized successfully with {llm_provider.upper()}!")
     return vn
 
 
@@ -848,8 +897,15 @@ def main():
         print(f"🐛 Debug Console:   Enabled (WebSocket)")
     print()
     print(f"⚙️  Configuration:")
-    print(f"   - Model: {vn.config.get('model', 'N/A')}")
+    llm_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+    if llm_provider == "openai":
+        print(f"   - LLM Provider: OpenAI")
+        print(f"   - Model: {vn.config.get('model', 'N/A')}")
+    else:
+        print(f"   - LLM Provider: Google Gemini")
+        print(f"   - Model: {vn.config.get('model_name', 'gemini-2.0-flash-exp')}")
     print(f"   - Language: Vietnamese")
+    print(f"   - Embedding: {'BGE-M3' if os.getenv('HUGGINGFACE_API_KEY') else 'Default'}")
     print(f"   - LLM can see data: {allow_llm_to_see_data}")
     print(f"   - Debug mode: {debug}")
     print()
