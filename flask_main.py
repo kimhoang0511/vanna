@@ -523,7 +523,8 @@ def main():
                             fig_for_png = go.Figure(data=fig_data['data'], layout=fig_data['layout'])
                             
                             # Convert Plotly figure to PNG bytes
-                            img_bytes = fig_for_png.to_image(format="png", width=1200, height=800, scale=2)
+                            # Use scale=1 for smaller file size and faster loading
+                            img_bytes = fig_for_png.to_image(format="png", width=1200, height=800, scale=1)
                             
                             print(f"✅ PNG created: {len(img_bytes):,} bytes")
                             print(f"   Figure data - traces: {len(fig_for_png.data)}")
@@ -533,21 +534,23 @@ def main():
                                     print(f"   Y data points: {len(trace.y)}")
                                     print(f"   Y sample: {list(trace.y)[:5] if len(trace.y) >= 5 else list(trace.y)}")
                             
+                            # Create base64 for instant loading fallback
+                            img_base64_str = base64.b64encode(img_bytes).decode('utf-8')
+                            chart_image_base64 = f"data:image/png;base64,{img_base64_str}"
+                            print(f"✅ Base64 created: {len(chart_image_base64):,} chars (instant load fallback)")
+                            
                             print(f"☁️  Uploading to ImgBB...")
                             
                             # Upload to ImgBB (free, no account needed)
                             imgbb_api_key = os.getenv("IMGBB_API_KEY", "")
                             
                             if imgbb_api_key:
-                                # Encode image to base64
-                                img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                                
-                                # Upload to ImgBB
+                                # Upload to ImgBB (use base64 string without data URI prefix)
                                 upload_response = req.post(
                                     "https://api.imgbb.com/1/upload",
                                     data={
                                         "key": imgbb_api_key,
-                                        "image": img_base64,
+                                        "image": img_base64_str,
                                         "name": f"vanna_chart_{cache_id[:8]}"
                                     },
                                     timeout=30
@@ -710,11 +713,17 @@ def main():
                 response_data["chart"] = chart_json
                 response_data["has_chart"] = True
                 
+                # Add base64 image for instant loading (fallback)
+                if chart_image_base64:
+                    response_data["chart_image_base64"] = chart_image_base64
+                    response_data["chart_image_base64_note"] = "Use this for instant loading without external dependencies"
+                
                 # Add image URL if uploaded
                 if chart_image_url:
                     response_data["chart_image_url"] = chart_image_url
                     response_data["chart_image_format"] = "png"
-                    response_data["chart_image_size"] = "1200x800"
+                    response_data["chart_image_size"] = "1200x800@1x"
+                    response_data["chart_image_note"] = "Cloud URL may be slow to load, use base64 for instant display"
                 
                 # Add HTML URL if uploaded
                 if chart_html_url:
