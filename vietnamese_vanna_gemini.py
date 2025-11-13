@@ -31,6 +31,36 @@ class VietnameseVannaGemini(ChromaDB_VectorStore, GoogleGeminiChat):
         ChromaDB_VectorStore.__init__(self, config=config)
         GoogleGeminiChat.__init__(self, config=config)
     
+    def submit_prompt(self, prompt, **kwargs) -> str:
+        """
+        Override submit_prompt để thêm logging
+        """
+        # Log prompt trước khi gửi
+        print("\n" + "="*80)
+        print("🚀 [VietnameseVannaGemini] SENDING TO LLM")
+        print("="*80)
+        print(f"Model: {getattr(self, 'chat_model', 'N/A')}")
+        print(f"Temperature: {getattr(self, 'temperature', 'N/A')}")
+        print("-"*80)
+        print(prompt)
+        print("="*80)
+        print("🚀 [VietnameseVannaGemini] PROMPT END")
+        print("="*80 + "\n")
+        
+        # Gọi parent class submit_prompt
+        response = super().submit_prompt(prompt, **kwargs)
+        
+        # Log response từ LLM
+        print("\n" + "="*80)
+        print("📥 [VietnameseVannaGemini] LLM RESPONSE START")
+        print("="*80)
+        print(response)
+        print("="*80)
+        print("📥 [VietnameseVannaGemini] LLM RESPONSE END")
+        print("="*80 + "\n")
+        
+        return response
+    
     def get_sql_prompt(
         self,
         initial_prompt: str,
@@ -97,35 +127,28 @@ Your response should ONLY be based on the given context and follow the response 
         # 5. Build message log với examples
         # Note: Gemini xử lý message format khác với OpenAI
         # Gemini submit_prompt() nhận một string đơn, không phải list of messages
-        
-        # 🔵 LOG: Đánh dấu bắt đầu build prompt
-        print("\n" + "🔷" * 40)
-        print("🔧 BUILDING PROMPT FOR LLM (VietnameseVannaGemini)")
-        print("🔷" * 40)
-        
         prompt_text = initial_prompt + "\n\n"
         
         # Add examples
         if question_sql_list:
             prompt_text += "===Previous Question-SQL Examples\n\n"
-            print(f"📚 Adding {len(question_sql_list)} example(s)...")
             for example in question_sql_list:
                 if example is not None and "question" in example and "sql" in example:
                     prompt_text += f"Question: {example['question']}\n"
                     prompt_text += f"SQL: {example['sql']}\n\n"
-        else:
-            print("ℹ️  No examples to add")
         
         # Add current question
-        print(f"❓ Current Question: {question}")
         prompt_text += f"===Current Question\n{question}\n\n"
         prompt_text += "===Your SQL Response (plain SQL only, no markdown):\n"
         
-        # 🔵 LOG: Đánh dấu kết thúc build prompt
-        print("🔷" * 40)
-        print("✅ PROMPT BUILT SUCCESSFULLY")
-        print(f"📏 Total prompt length: {len(prompt_text)} characters")
-        print("🔷" * 40 + "\n")
+        # Log prompt before sending to LLM
+        print("\n" + "="*80)
+        print("📝 [VietnameseVannaGemini] PROMPT START")
+        print("="*80)
+        print(prompt_text)
+        print("="*80)
+        print("📝 [VietnameseVannaGemini] PROMPT END")
+        print("="*80 + "\n")
         
         return prompt_text
 
@@ -148,6 +171,36 @@ class BilingualVannaGemini(ChromaDB_VectorStore, GoogleGeminiChat):
 - SQL queries must still use standard English syntax
 - Example: "Tổng doanh thu" → SELECT SUM(sales) FROM ...
 """
+    
+    def submit_prompt(self, prompt, **kwargs) -> str:
+        """
+        Override submit_prompt để thêm logging
+        """
+        # Log prompt trước khi gửi
+        print("\n" + "="*80)
+        print("🚀 [BilingualVannaGemini] SENDING TO LLM")
+        print("="*80)
+        print(f"Model: {getattr(self, 'chat_model', 'N/A')}")
+        print(f"Temperature: {getattr(self, 'temperature', 'N/A')}")
+        print("-"*80)
+        print(prompt)
+        print("="*80)
+        print("🚀 [BilingualVannaGemini] PROMPT END")
+        print("="*80 + "\n")
+        
+        # Gọi parent class submit_prompt
+        response = super().submit_prompt(prompt, **kwargs)
+        
+        # Log response từ LLM
+        print("\n" + "="*80)
+        print("📥 [BilingualVannaGemini] LLM RESPONSE START")
+        print("="*80)
+        print(response)
+        print("="*80)
+        print("📥 [BilingualVannaGemini] LLM RESPONSE END")
+        print("="*80 + "\n")
+        
+        return response
     
     def _detect_vietnamese(self, text_list: list) -> bool:
         """
@@ -222,35 +275,19 @@ class BilingualVannaGemini(ChromaDB_VectorStore, GoogleGeminiChat):
         initial_prompt += guidelines
         
         # Build prompt text (Gemini doesn't use message format like OpenAI)
-        # 🔵 LOG: Đánh dấu bắt đầu build prompt
-        print("\n" + "🔶" * 40)
-        print("🔧 BUILDING PROMPT FOR LLM (BilingualVannaGemini)")
-        print("🔶" * 40)
-        print(f"🌐 Vietnamese detected: {has_vietnamese}")
-        
         prompt_text = initial_prompt + "\n\n"
         
         # Add examples
         if question_sql_list:
             prompt_text += "===Previous Question-SQL Examples\n\n"
-            print(f"📚 Adding {len(question_sql_list)} example(s)...")
             for example in question_sql_list:
                 if example is not None and "question" in example and "sql" in example:
                     prompt_text += f"Question: {example['question']}\n"
                     prompt_text += f"SQL: {example['sql']}\n\n"
-        else:
-            print("ℹ️  No examples to add")
         
         # Add current question
-        print(f"❓ Current Question: {question}")
         prompt_text += f"===Current Question\n{question}\n\n"
         prompt_text += "===Your SQL Response:\n"
-        
-        # 🔵 LOG: Đánh dấu kết thúc build prompt
-        print("🔶" * 40)
-        print("✅ PROMPT BUILT SUCCESSFULLY")
-        print(f"📏 Total prompt length: {len(prompt_text)} characters")
-        print("🔶" * 40 + "\n")
         
         return prompt_text
 
