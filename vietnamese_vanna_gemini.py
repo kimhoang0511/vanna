@@ -97,19 +97,35 @@ Your response should ONLY be based on the given context and follow the response 
         # 5. Build message log với examples
         # Note: Gemini xử lý message format khác với OpenAI
         # Gemini submit_prompt() nhận một string đơn, không phải list of messages
+        
+        # 🔵 LOG: Đánh dấu bắt đầu build prompt
+        print("\n" + "🔷" * 40)
+        print("🔧 BUILDING PROMPT FOR LLM (VietnameseVannaGemini)")
+        print("🔷" * 40)
+        
         prompt_text = initial_prompt + "\n\n"
         
         # Add examples
         if question_sql_list:
             prompt_text += "===Previous Question-SQL Examples\n\n"
+            print(f"📚 Adding {len(question_sql_list)} example(s)...")
             for example in question_sql_list:
                 if example is not None and "question" in example and "sql" in example:
                     prompt_text += f"Question: {example['question']}\n"
                     prompt_text += f"SQL: {example['sql']}\n\n"
+        else:
+            print("ℹ️  No examples to add")
         
         # Add current question
+        print(f"❓ Current Question: {question}")
         prompt_text += f"===Current Question\n{question}\n\n"
         prompt_text += "===Your SQL Response (plain SQL only, no markdown):\n"
+        
+        # 🔵 LOG: Đánh dấu kết thúc build prompt
+        print("🔷" * 40)
+        print("✅ PROMPT BUILT SUCCESSFULLY")
+        print(f"📏 Total prompt length: {len(prompt_text)} characters")
+        print("🔷" * 40 + "\n")
         
         return prompt_text
 
@@ -206,19 +222,35 @@ class BilingualVannaGemini(ChromaDB_VectorStore, GoogleGeminiChat):
         initial_prompt += guidelines
         
         # Build prompt text (Gemini doesn't use message format like OpenAI)
+        # 🔵 LOG: Đánh dấu bắt đầu build prompt
+        print("\n" + "🔶" * 40)
+        print("🔧 BUILDING PROMPT FOR LLM (BilingualVannaGemini)")
+        print("🔶" * 40)
+        print(f"🌐 Vietnamese detected: {has_vietnamese}")
+        
         prompt_text = initial_prompt + "\n\n"
         
         # Add examples
         if question_sql_list:
             prompt_text += "===Previous Question-SQL Examples\n\n"
+            print(f"📚 Adding {len(question_sql_list)} example(s)...")
             for example in question_sql_list:
                 if example is not None and "question" in example and "sql" in example:
                     prompt_text += f"Question: {example['question']}\n"
                     prompt_text += f"SQL: {example['sql']}\n\n"
+        else:
+            print("ℹ️  No examples to add")
         
         # Add current question
+        print(f"❓ Current Question: {question}")
         prompt_text += f"===Current Question\n{question}\n\n"
         prompt_text += "===Your SQL Response:\n"
+        
+        # 🔵 LOG: Đánh dấu kết thúc build prompt
+        print("🔶" * 40)
+        print("✅ PROMPT BUILT SUCCESSFULLY")
+        print(f"📏 Total prompt length: {len(prompt_text)} characters")
+        print("🔶" * 40 + "\n")
         
         return prompt_text
 
