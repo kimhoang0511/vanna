@@ -65,10 +65,29 @@ class GoogleGeminiChat(VannaBase):
         return message
 
     def submit_prompt(self, prompt, **kwargs) -> str:
+        # Log prompt being sent to LLM
+        print("\n" + "="*80)
+        print("🚀 LLM PROMPT START")
+        print("="*80)
+        print(prompt)
+        print("="*80)
+        print("🚀 LLM PROMPT END")
+        print("="*80 + "\n")
+        
         response = self.chat_model.generate_content(
             prompt,
             generation_config={
                 "temperature": self.temperature,
             },
         )
+        
+        # Log response from LLM
+        print("\n" + "="*80)
+        print("📥 LLM RESPONSE START")
+        print("="*80)
+        print(response.text)
+        print("="*80)
+        print("📥 LLM RESPONSE END")
+        print("="*80 + "\n")
+        
         return response.text
