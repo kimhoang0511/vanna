@@ -34,6 +34,7 @@ API Endpoints (tự động có sẵn):
 
 import os
 from dotenv import load_dotenv
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -459,6 +460,17 @@ def main():
             
             print(f"⚙️  Executing SQL...")
             df = vn.run_sql(sql=sql)
+            
+            # Fix: Convert PostgreSQL DECIMAL/NUMERIC (object dtype) to float
+            # for proper numeric detection in should_generate_chart
+            if df is not None and not df.empty:
+                for col in df.columns:
+                    if df[col].dtype == 'object':
+                        try:
+                            # Try converting to numeric (coerce errors to NaN)
+                            df[col] = pd.to_numeric(df[col], errors='ignore')
+                        except:
+                            pass  # Keep as-is if conversion fails
             
             # Convert DataFrame to JSON
             if df is not None and not df.empty:
