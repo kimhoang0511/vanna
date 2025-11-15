@@ -524,6 +524,7 @@ def main():
             if df is not None:
                 try:
                     from decimal import Decimal
+                    from datetime import date, datetime
                     import numpy as np
                     
                     # Convert DataFrame to dict (orient='records' is JSON-friendly)
@@ -534,6 +535,10 @@ def main():
                         """Convert non-JSON types to JSON-serializable types"""
                         if isinstance(obj, Decimal):
                             return float(obj)
+                        elif isinstance(obj, datetime):
+                            return obj.isoformat()  # "2024-01-15T10:30:00"
+                        elif isinstance(obj, date):
+                            return obj.isoformat()  # "2024-01-15"
                         elif isinstance(obj, (np.integer, np.int64)):
                             return int(obj)
                         elif isinstance(obj, (np.floating, np.float64)):
