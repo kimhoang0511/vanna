@@ -504,6 +504,15 @@ def main():
             log_debug(f"⚙️  Executing SQL...")
             df = vn.run_sql(sql=sql)
             
+            # Convert Decimal columns to float in DataFrame for chart generation
+            if df is not None and not df.empty:
+                from decimal import Decimal
+                for col in df.columns:
+                    if df[col].dtype == 'object':
+                        # Check if column contains Decimal
+                        if len(df[col]) > 0 and isinstance(df[col].iloc[0], Decimal):
+                            df[col] = df[col].astype(float)
+            
             # Helper function to convert non-JSON types
             def convert_to_json_serializable(obj):
                 """Convert non-JSON types to JSON-serializable types"""
@@ -636,8 +645,10 @@ def main():
                                     f.write(img_bytes)
                                 
                                 # Generate full Railway URL (with host)
-                                # Get host from request or use environment variable
-                                host = request.host_url.rstrip('/')  # e.g., "https://vanna-production.up.railway.app"
+                                # Force HTTPS for Railway deployment
+                                host = request.host_url.rstrip('/')
+                                if host.startswith('http://'):
+                                    host = host.replace('http://', 'https://', 1)
                                 chart_local_url = f"{host}/static/charts/{chart_filename}"
                                 log_debug(f"💾 Chart saved to Railway: {chart_filepath}")
                                 log_debug(f"🔗 Full URL: {chart_local_url}")
