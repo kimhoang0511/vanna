@@ -523,11 +523,35 @@ def main():
             # Only save df if it's not None and can be serialized
             if df is not None:
                 try:
+                    from decimal import Decimal
+                    import numpy as np
+                    
                     # Convert DataFrame to dict (orient='records' is JSON-friendly)
-                    cache_data["df_dict"] = df.to_dict(orient='records')
+                    df_dict = df.to_dict(orient='records')
+                    
+                    # Convert Decimal and other non-JSON types to JSON-serializable types
+                    def convert_to_json_serializable(obj):
+                        """Convert non-JSON types to JSON-serializable types"""
+                        if isinstance(obj, Decimal):
+                            return float(obj)
+                        elif isinstance(obj, (np.integer, np.int64)):
+                            return int(obj)
+                        elif isinstance(obj, (np.floating, np.float64)):
+                            return float(obj)
+                        elif pd.isna(obj):
+                            return None
+                        return obj
+                    
+                    # Apply conversion to all values in df_dict
+                    df_dict_cleaned = []
+                    for row in df_dict:
+                        cleaned_row = {k: convert_to_json_serializable(v) for k, v in row.items()}
+                        df_dict_cleaned.append(cleaned_row)
+                    
+                    cache_data["df_dict"] = df_dict_cleaned
                     cache_data["df_columns"] = list(df.columns)
                 except Exception as df_error:
-                    print(f"⚠️  Could not serialize DataFrame: {df_error}")
+                    log_warning(f"⚠️  Could not serialize DataFrame: {df_error}")
             
             custom_cache.set_multiple(cache_id, cache_data)
             
