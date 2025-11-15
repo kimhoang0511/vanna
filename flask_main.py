@@ -34,7 +34,8 @@ API Endpoints (tự động có sẵn):
 
 import os
 from dotenv import load_dotenv
-import pandas as pd
+from pathlib import Path
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -46,6 +47,16 @@ from vanna.flask import VannaFlaskApp
 from vanna_cache_fix import QuestionHashCache, PersistentQuestionCache
 from postgres_cache import PostgresCache
 import plotly.graph_objects as go
+
+# ============================================================================
+# Chart Storage Configuration
+# ============================================================================
+
+# Create charts directory
+CHARTS_DIR = Path(__file__).parent / "static" / "charts"
+CHARTS_DIR.mkdir(parents=True, exist_ok=True)
+
+print(f"📁 Charts directory: {CHARTS_DIR}")
 
 # ============================================================================
 # Define Custom Vanna Classes
@@ -330,6 +341,16 @@ def main():
     vn.generate_sql = cached_generate_sql
     print("✅ Cache wrapper installed on generate_sql method")
     
+    # Configure static file serving for charts
+    from flask import send_from_directory
+    
+    @app.flask_app.route("/static/charts/<path:filename>")
+    def serve_chart(filename):
+        """Serve chart images from Railway filesystem"""
+        return send_from_directory(CHARTS_DIR, filename)
+    
+    print(f"✅ Static file serving enabled: /static/charts/")
+    
     # Add new endpoint to load from custom cache
     @app.flask_app.route("/api/v0/get_cached_question", methods=["GET"])
     def get_cached_question():
@@ -461,17 +482,6 @@ def main():
             print(f"⚙️  Executing SQL...")
             df = vn.run_sql(sql=sql)
             
-            # Fix: Convert PostgreSQL DECIMAL/NUMERIC (object dtype) to float
-            # for proper numeric detection in should_generate_chart
-            if df is not None and not df.empty:
-                for col in df.columns:
-                    if df[col].dtype == 'object':
-                        try:
-                            # Try converting to numeric (coerce errors to NaN)
-                            df[col] = pd.to_numeric(df[col], errors='ignore')
-                        except:
-                            pass  # Keep as-is if conversion fails
-            
             # Convert DataFrame to JSON
             if df is not None and not df.empty:
                 data_json = df.to_dict(orient='records')
@@ -550,6 +560,17 @@ def main():
                             img_base64_str = base64.b64encode(img_bytes).decode('utf-8')
                             chart_image_base64 = f"data:image/png;base64,{img_base64_str}"
                             print(f"✅ Base64 created: {len(chart_image_base64):,} chars (instant load fallback)")
+                            
+                            # Save PNG to Railway filesystem
+                            chart_filename = f"chart_{cache_id}.png"
+                            chart_filepath = CHARTS_DIR / chart_filename
+                            with open(chart_filepath, 'wb') as f:
+                                f.write(img_bytes)
+                            
+                            # Generate Railway URL (relative to Flask app)
+                            chart_local_url = f"/static/charts/{chart_filename}"
+                            print(f"💾 Chart saved locally: {chart_filepath}")
+                            print(f"🔗 Local URL: {chart_local_url}")
                             
                             print(f"☁️  Uploading to ImgBB...")
                             
@@ -725,6 +746,11 @@ def main():
                 response_data["chart"] = chart_json
                 response_data["has_chart"] = True
                 
+                # Add Railway local URL (FASTEST - same server)
+                if chart_local_url:
+                    response_data["chart_local_url"] = chart_local_url
+                    response_data["chart_local_note"] = "⚡ Fastest - served from Railway (ephemeral storage)"
+                
                 # Add base64 image for instant loading (fallback)
                 if chart_image_base64:
                     response_data["chart_image_base64"] = chart_image_base64
@@ -735,7 +761,7 @@ def main():
                     response_data["chart_image_url"] = chart_image_url
                     response_data["chart_image_format"] = "png"
                     response_data["chart_image_size"] = "1200x800@1x"
-                    response_data["chart_image_note"] = "Cloud URL may be slow to load, use base64 for instant display"
+                    response_data["chart_image_note"] = "🐌 Cloud URL may be slow to load, use local_url or base64 instead"
                 
                 # Add HTML URL if uploaded
                 if chart_html_url:
