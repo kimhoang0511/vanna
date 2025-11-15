@@ -607,10 +607,12 @@ def main():
                                 with open(chart_filepath, 'wb') as f:
                                     f.write(img_bytes)
                                 
-                                # Generate Railway URL (relative to Flask app)
-                                chart_local_url = f"/static/charts/{chart_filename}"
+                                # Generate full Railway URL (with host)
+                                # Get host from request or use environment variable
+                                host = request.host_url.rstrip('/')  # e.g., "https://vanna-production.up.railway.app"
+                                chart_local_url = f"{host}/static/charts/{chart_filename}"
                                 log_debug(f"💾 Chart saved to Railway: {chart_filepath}")
-                                log_debug(f"🔗 Local URL: {chart_local_url}")
+                                log_debug(f"🔗 Full URL: {chart_local_url}")
                             else:
                                 log_debug(f"⏭️  Skipping Railway storage (mode: {chart_storage})")
                             
