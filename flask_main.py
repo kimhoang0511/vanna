@@ -561,41 +561,49 @@ def main():
                             chart_image_base64 = f"data:image/png;base64,{img_base64_str}"
                             print(f"✅ Base64 created: {len(chart_image_base64):,} chars (instant load fallback)")
                             
-                            # Save PNG to Railway filesystem
-                            chart_filename = f"chart_{cache_id}.png"
-                            chart_filepath = CHARTS_DIR / chart_filename
-                            with open(chart_filepath, 'wb') as f:
-                                f.write(img_bytes)
+                            # Get chart storage preference from environment
+                            # Options: "railway", "imgbb", "both" (default: "railway")
+                            chart_storage = os.getenv("CHART_STORAGE", "railway").lower()
+                            print(f"📁 Chart storage mode: {chart_storage}")
                             
-                            # Generate Railway URL (relative to Flask app)
-                            chart_local_url = f"/static/charts/{chart_filename}"
-                            print(f"💾 Chart saved locally: {chart_filepath}")
-                            print(f"🔗 Local URL: {chart_local_url}")
-                            
-                            print(f"☁️  Uploading to ImgBB...")
-                            
-                            # Upload to ImgBB (free, no account needed)
-                            imgbb_api_key = os.getenv("IMGBB_API_KEY", "")
-                            
-                            if imgbb_api_key:
-                                # Upload to ImgBB (use base64 string without data URI prefix)
-                                upload_response = req.post(
-                                    "https://api.imgbb.com/1/upload",
-                                    data={
-                                        "key": imgbb_api_key,
-                                        "image": img_base64_str,
-                                        "name": f"vanna_chart_{cache_id[:8]}"
-                                    },
-                                    timeout=30
-                                )
+                            # Save to Railway filesystem
+                            if chart_storage in ["railway", "both"]:
+                                chart_filename = f"chart_{cache_id}.png"
+                                chart_filepath = CHARTS_DIR / chart_filename
+                                with open(chart_filepath, 'wb') as f:
+                                    f.write(img_bytes)
                                 
-                                if upload_response.status_code == 200:
-                                    upload_data = upload_response.json()
-                                    if upload_data.get('success'):
-                                        chart_image_url = upload_data['data']['url']
-                                        
-                                        # Create HTML page with image
-                                        html_content = f"""<!DOCTYPE html>
+                                # Generate Railway URL (relative to Flask app)
+                                chart_local_url = f"/static/charts/{chart_filename}"
+                                print(f"💾 Chart saved to Railway: {chart_filepath}")
+                                print(f"🔗 Local URL: {chart_local_url}")
+                            else:
+                                print(f"⏭️  Skipping Railway storage (mode: {chart_storage})")
+                            
+                            # Upload to ImgBB (if enabled)
+                            if chart_storage in ["imgbb", "both"]:
+                                imgbb_api_key = os.getenv("IMGBB_API_KEY", "")
+                                
+                                if imgbb_api_key:
+                                    print(f"☁️  Uploading to ImgBB...")
+                                    # Upload to ImgBB (use base64 string without data URI prefix)
+                                    upload_response = req.post(
+                                        "https://api.imgbb.com/1/upload",
+                                        data={
+                                            "key": imgbb_api_key,
+                                            "image": img_base64_str,
+                                            "name": f"vanna_chart_{cache_id[:8]}"
+                                        },
+                                        timeout=30
+                                    )
+                                    
+                                    if upload_response.status_code == 200:
+                                        upload_data = upload_response.json()
+                                        if upload_data.get('success'):
+                                            chart_image_url = upload_data['data']['url']
+                                            
+                                            # Create HTML page with image
+                                            html_content = f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
     <meta charset="utf-8">
@@ -692,29 +700,31 @@ def main():
 </html>"""
                                         
                                         # Upload HTML to tmpfiles.org (free temporary file hosting)
-                                        html_upload_response = req.post(
-                                            "https://tmpfiles.org/api/v1/upload",
-                                            files={'file': ('chart.html', html_content.encode('utf-8'), 'text/html')},
-                                            timeout=30
-                                        )
-                                        
-                                        if html_upload_response.status_code == 200:
-                                            html_data = html_upload_response.json()
-                                            if html_data.get('status') == 'success':
-                                                # tmpfiles.org returns URL like https://tmpfiles.org/123456
-                                                # Need to change to https://tmpfiles.org/dl/123456 for direct access
-                                                temp_url = html_data['data']['url']
-                                                chart_html_url = temp_url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
-                                                print(f"✅ Chart HTML uploaded: {chart_html_url}")
-                                        
-                                        print(f"✅ Chart image uploaded: {chart_image_url}")
+                                            html_upload_response = req.post(
+                                                "https://tmpfiles.org/api/v1/upload",
+                                                files={'file': ('chart.html', html_content.encode('utf-8'), 'text/html')},
+                                                timeout=30
+                                            )
+                                            
+                                            if html_upload_response.status_code == 200:
+                                                html_data = html_upload_response.json()
+                                                if html_data.get('status') == 'success':
+                                                    # tmpfiles.org returns URL like https://tmpfiles.org/123456
+                                                    # Need to change to https://tmpfiles.org/dl/123456 for direct access
+                                                    temp_url = html_data['data']['url']
+                                                    chart_html_url = temp_url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
+                                                    print(f"✅ Chart HTML uploaded: {chart_html_url}")
+                                            
+                                            print(f"✅ Chart image uploaded to ImgBB: {chart_image_url}")
+                                        else:
+                                            print(f"⚠️  ImgBB upload failed: {upload_data.get('error', {}).get('message')}")
                                     else:
-                                        print(f"⚠️  ImgBB upload failed: {upload_data.get('error', {}).get('message')}")
+                                        print(f"⚠️  ImgBB upload failed: HTTP {upload_response.status_code}")
                                 else:
-                                    print(f"⚠️  ImgBB upload failed: HTTP {upload_response.status_code}")
+                                    print(f"⚠️  IMGBB_API_KEY not set, cannot upload to ImgBB")
+                                    print(f"   Get free API key at: https://api.imgbb.com/")
                             else:
-                                print(f"⚠️  IMGBB_API_KEY not set, skipping image upload")
-                                print(f"   Get free API key at: https://api.imgbb.com/")
+                                print(f"⏭️  Skipping ImgBB upload (mode: {chart_storage})")
                                 
                         except ImportError:
                             print(f"⚠️  kaleido not installed, skipping PNG conversion")
