@@ -40,6 +40,28 @@ import hashlib
 # Load environment variables
 load_dotenv()
 
+# Configure logging level based on environment
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()  # DEBUG, INFO, WARNING, ERROR
+ENABLE_VERBOSE_LOGS = LOG_LEVEL == "DEBUG"
+
+def log_debug(message):
+    """Only log debug messages if LOG_LEVEL=DEBUG"""
+    if ENABLE_VERBOSE_LOGS:
+        print(message)
+
+def log_info(message):
+    """Log info messages if LOG_LEVEL is INFO or DEBUG"""
+    if LOG_LEVEL in ["DEBUG", "INFO"]:
+        print(message)
+
+def log_warning(message):
+    """Always log warnings and errors"""
+    print(message)
+
+def log_error(message):
+    """Always log errors"""
+    print(message)
+
 from vietnamese_vanna import VietnameseVanna
 from bge_m3_embedding import BGE_M3_EmbeddingFunction
 from vanna.chromadb import ChromaDB_VectorStore
@@ -321,11 +343,11 @@ def main():
         
         if cached_sql:
             # Cache HIT - return immediately without calling LLM
-            print(f"✅ Cache HIT: {question[:60]}...")
+            log_debug(f"✅ Cache HIT: {question[:60]}...")
             return cached_sql
         
         # Cache MISS - call original LLM method
-        print(f"⚠️  Cache MISS: {question[:60]}... → Calling LLM")
+        log_info(f"⚠️  Cache MISS: {question[:60]}... → Calling LLM")
         sql = original_generate_sql(question, **kwargs)
         
         # Save to cache for next time (batch save for performance)
@@ -334,7 +356,7 @@ def main():
             "sql": sql
         })
         
-        print(f"💾 Cached for future: {cache_id}")
+        log_debug(f"💾 Cached for future: {cache_id}")
         return sql
     
     # Replace the method
@@ -369,7 +391,7 @@ def main():
         cached_sql = custom_cache.get(cache_id, "sql")
         
         if cached_question or cached_sql:
-            print(f"✅ Loaded from cache: {cache_id}")
+            log_debug(f"✅ Loaded from cache: {cache_id}")
             return jsonify({
                 "type": "question_cache",
                 "id": cache_id,
@@ -377,7 +399,7 @@ def main():
                 "sql": cached_sql if cached_sql else "N/A"
             })
         else:
-            print(f"❌ Cache miss: {cache_id}")
+            log_debug(f"❌ Cache miss: {cache_id}")
             return jsonify({
                 "type": "error",
                 "error": f"No cached data found for id: {cache_id}"
@@ -443,7 +465,7 @@ def main():
         
         try:
             # Step 1: Generate SQL
-            print(f"🔍 Question: {question}")
+            log_info(f"🔍 Question: {question}")
             cache_id = custom_cache.generate_id(question=question)
             
             sql = vn.generate_sql(
@@ -458,7 +480,7 @@ def main():
                     "question": question
                 }), 500
             
-            print(f"✅ Generated SQL: {sql[:100]}...")
+            log_debug(f"✅ Generated SQL: {sql[:100]}...")
             
             # Validate SQL
             if not vn.is_sql_valid(sql=sql):
@@ -479,18 +501,18 @@ def main():
                     "hint": "Use vn.connect_to_postgres() or similar method"
                 }), 503
             
-            print(f"⚙️  Executing SQL...")
+            log_debug(f"⚙️  Executing SQL...")
             df = vn.run_sql(sql=sql)
             
             # Convert DataFrame to JSON
             if df is not None and not df.empty:
                 data_json = df.to_dict(orient='records')
                 rows_count = len(df)
-                print(f"✅ Query returned {rows_count} rows")
+                log_debug(f"✅ Query returned {rows_count} rows")
             else:
                 data_json = []
                 rows_count = 0
-                print(f"⚠️  Query returned no data")
+                log_debug(f"⚠️  Query returned no data")
             
             # Save to cache (convert DataFrame to dict for JSON serialization)
             cache_data = {
@@ -520,7 +542,7 @@ def main():
                 
                 if should_generate_chart:
                     try:
-                        print(f"📊 Generating chart...")
+                        log_info(f"📊 Generating chart...")
                         
                         # Generate Plotly code
                         plotly_code = vn.generate_plotly_code(
@@ -538,7 +560,7 @@ def main():
                         
                         # Convert to JSON
                         chart_json = fig.to_json()
-                        print(f"✅ Chart generated successfully")
+                        log_debug(f"✅ Chart generated successfully")
                         
                         # Convert chart to PNG and upload to image hosting
                         try:
@@ -546,7 +568,7 @@ def main():
                             import base64
                             import requests as req
                             
-                            print(f"📸 Converting chart to PNG...")
+                            log_debug(f"📸 Converting chart to PNG...")
                             
                             # Ensure figure has proper layout before PNG conversion
                             # Re-create figure from JSON to avoid any state issues
@@ -558,23 +580,25 @@ def main():
                             # Use scale=1 for smaller file size and faster loading
                             img_bytes = fig_for_png.to_image(format="png", width=1200, height=800, scale=1)
                             
-                            print(f"✅ PNG created: {len(img_bytes):,} bytes")
-                            print(f"   Figure data - traces: {len(fig_for_png.data)}")
-                            if len(fig_for_png.data) > 0:
-                                trace = fig_for_png.data[0]
-                                if hasattr(trace, 'y') and trace.y:
-                                    print(f"   Y data points: {len(trace.y)}")
-                                    print(f"   Y sample: {list(trace.y)[:5] if len(trace.y) >= 5 else list(trace.y)}")
+                            log_debug(f"✅ PNG created: {len(img_bytes):,} bytes")
+                            # Only log detailed trace data in DEBUG mode
+                            if ENABLE_VERBOSE_LOGS:
+                                log_debug(f"   Figure data - traces: {len(fig_for_png.data)}")
+                                if len(fig_for_png.data) > 0:
+                                    trace = fig_for_png.data[0]
+                                    if hasattr(trace, 'y') and trace.y:
+                                        log_debug(f"   Y data points: {len(trace.y)}")
+                                        log_debug(f"   Y sample: {list(trace.y)[:5] if len(trace.y) >= 5 else list(trace.y)}")
                             
                             # Create base64 for instant loading fallback
                             img_base64_str = base64.b64encode(img_bytes).decode('utf-8')
                             chart_image_base64 = f"data:image/png;base64,{img_base64_str}"
-                            print(f"✅ Base64 created: {len(chart_image_base64):,} chars (instant load fallback)")
+                            log_debug(f"✅ Base64 created: {len(chart_image_base64):,} chars")
                             
                             # Get chart storage preference from environment
                             # Options: "railway", "imgbb", "both" (default: "railway")
                             chart_storage = os.getenv("CHART_STORAGE", "railway").lower()
-                            print(f"📁 Chart storage mode: {chart_storage}")
+                            log_debug(f"📁 Chart storage mode: {chart_storage}")
                             
                             # Save to Railway filesystem
                             if chart_storage in ["railway", "both"]:
@@ -585,17 +609,17 @@ def main():
                                 
                                 # Generate Railway URL (relative to Flask app)
                                 chart_local_url = f"/static/charts/{chart_filename}"
-                                print(f"💾 Chart saved to Railway: {chart_filepath}")
-                                print(f"🔗 Local URL: {chart_local_url}")
+                                log_debug(f"💾 Chart saved to Railway: {chart_filepath}")
+                                log_debug(f"🔗 Local URL: {chart_local_url}")
                             else:
-                                print(f"⏭️  Skipping Railway storage (mode: {chart_storage})")
+                                log_debug(f"⏭️  Skipping Railway storage (mode: {chart_storage})")
                             
                             # Upload to ImgBB (if enabled)
                             if chart_storage in ["imgbb", "both"]:
                                 imgbb_api_key = os.getenv("IMGBB_API_KEY", "")
                                 
                                 if imgbb_api_key:
-                                    print(f"☁️  Uploading to ImgBB...")
+                                    log_info(f"☁️  Uploading to ImgBB...")
                                     # Upload to ImgBB (use base64 string without data URI prefix)
                                     upload_response = req.post(
                                         "https://api.imgbb.com/1/upload",
@@ -723,32 +747,34 @@ def main():
                                                     # Need to change to https://tmpfiles.org/dl/123456 for direct access
                                                     temp_url = html_data['data']['url']
                                                     chart_html_url = temp_url.replace('tmpfiles.org/', 'tmpfiles.org/dl/')
-                                                    print(f"✅ Chart HTML uploaded: {chart_html_url}")
+                                                    log_debug(f"✅ Chart HTML uploaded: {chart_html_url}")
                                             
-                                            print(f"✅ Chart image uploaded to ImgBB: {chart_image_url}")
+                                            log_info(f"✅ Chart image uploaded to ImgBB: {chart_image_url}")
                                         else:
-                                            print(f"⚠️  ImgBB upload failed: {upload_data.get('error', {}).get('message')}")
+                                            log_warning(f"⚠️  ImgBB upload failed: {upload_data.get('error', {}).get('message')}")
                                     else:
-                                        print(f"⚠️  ImgBB upload failed: HTTP {upload_response.status_code}")
+                                        log_warning(f"⚠️  ImgBB upload failed: HTTP {upload_response.status_code}")
                                 else:
-                                    print(f"⚠️  IMGBB_API_KEY not set, cannot upload to ImgBB")
-                                    print(f"   Get free API key at: https://api.imgbb.com/")
+                                    log_debug(f"⚠️  IMGBB_API_KEY not set, cannot upload to ImgBB")
+                                    log_debug(f"   Get free API key at: https://api.imgbb.com/")
                             else:
-                                print(f"⏭️  Skipping ImgBB upload (mode: {chart_storage})")
+                                log_debug(f"⏭️  Skipping ImgBB upload (mode: {chart_storage})")
                                 
                         except ImportError:
-                            print(f"⚠️  kaleido not installed, skipping PNG conversion")
-                            print(f"   Install with: pip install kaleido")
+                            log_warning(f"⚠️  kaleido not installed, skipping PNG conversion")
+                            log_warning(f"   Install with: pip install kaleido")
                         except Exception as img_error:
-                            print(f"⚠️  Image upload failed: {str(img_error)}")
-                            import traceback
-                            traceback.print_exc()
+                            log_error(f"⚠️  Image upload failed: {str(img_error)}")
+                            if ENABLE_VERBOSE_LOGS:
+                                import traceback
+                                traceback.print_exc()
                         
                     except Exception as chart_error:
-                        print(f"⚠️  Chart generation failed: {str(chart_error)}")
+                        log_warning(f"⚠️  Chart generation failed: {str(chart_error)}")
                         # Continue without chart - not a critical error
-                        import traceback
-                        traceback.print_exc()
+                        if ENABLE_VERBOSE_LOGS:
+                            import traceback
+                            traceback.print_exc()
             
             # Return success response with optional chart
             response_data = {
@@ -793,9 +819,10 @@ def main():
             return jsonify(response_data)
             
         except Exception as e:
-            print(f"❌ Error: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            log_error(f"❌ Error: {str(e)}")
+            if ENABLE_VERBOSE_LOGS:
+                import traceback
+                traceback.print_exc()
             
             return jsonify({
                 "success": False,

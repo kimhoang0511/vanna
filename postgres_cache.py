@@ -6,9 +6,13 @@ Lưu cache vào database thay vì file - persistent và scalable
 import hashlib
 import json
 import psycopg2
+import os
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 from vanna.flask import Cache
+
+# Logging control
+ENABLE_CACHE_LOGS = os.getenv("LOG_LEVEL", "INFO").upper() in ["DEBUG", "INFO"]
 
 
 class PostgresCache(Cache):
@@ -42,7 +46,8 @@ class PostgresCache(Cache):
             self.connection_pool = pool.SimpleConnectionPool(
                 min_conn, max_conn, **connection_params
             )
-            print(f"✅ Connection pool created: {min_conn}-{max_conn} connections")
+            if ENABLE_CACHE_LOGS:
+                print(f"✅ Connection pool created: {min_conn}-{max_conn} connections")
         except Exception as e:
             print(f"⚠️  Failed to create connection pool: {e}")
             self.connection_pool = None
@@ -91,7 +96,8 @@ class PostgresCache(Cache):
             cursor.close()
             self._return_connection(conn)
             
-            print("✅ PostgreSQL cache table ready")
+            if ENABLE_CACHE_LOGS:
+                print("✅ PostgreSQL cache table ready")
             
         except Exception as e:
             print(f"⚠️  Error creating cache table: {e}")
