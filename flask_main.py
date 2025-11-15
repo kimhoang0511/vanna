@@ -504,9 +504,37 @@ def main():
             log_debug(f"⚙️  Executing SQL...")
             df = vn.run_sql(sql=sql)
             
-            # Convert DataFrame to JSON
+            # Helper function to convert non-JSON types
+            def convert_to_json_serializable(obj):
+                """Convert non-JSON types to JSON-serializable types"""
+                from decimal import Decimal
+                from datetime import date, datetime
+                import numpy as np
+                
+                if isinstance(obj, Decimal):
+                    return float(obj)
+                elif isinstance(obj, datetime):
+                    return obj.isoformat()  # "2024-01-15T10:30:00"
+                elif isinstance(obj, date):
+                    return obj.isoformat()  # "2024-01-15"
+                elif isinstance(obj, (np.integer, np.int64)):
+                    return int(obj)
+                elif isinstance(obj, (np.floating, np.float64)):
+                    return float(obj)
+                elif pd.isna(obj):
+                    return None
+                return obj
+            
+            # Convert DataFrame to JSON with proper type conversion
             if df is not None and not df.empty:
-                data_json = df.to_dict(orient='records')
+                df_dict = df.to_dict(orient='records')
+                
+                # Convert all values to JSON-serializable types
+                data_json = []
+                for row in df_dict:
+                    cleaned_row = {k: convert_to_json_serializable(v) for k, v in row.items()}
+                    data_json.append(cleaned_row)
+                
                 rows_count = len(df)
                 log_debug(f"✅ Query returned {rows_count} rows")
             else:
@@ -523,37 +551,8 @@ def main():
             # Only save df if it's not None and can be serialized
             if df is not None:
                 try:
-                    from decimal import Decimal
-                    from datetime import date, datetime
-                    import numpy as np
-                    
-                    # Convert DataFrame to dict (orient='records' is JSON-friendly)
-                    df_dict = df.to_dict(orient='records')
-                    
-                    # Convert Decimal and other non-JSON types to JSON-serializable types
-                    def convert_to_json_serializable(obj):
-                        """Convert non-JSON types to JSON-serializable types"""
-                        if isinstance(obj, Decimal):
-                            return float(obj)
-                        elif isinstance(obj, datetime):
-                            return obj.isoformat()  # "2024-01-15T10:30:00"
-                        elif isinstance(obj, date):
-                            return obj.isoformat()  # "2024-01-15"
-                        elif isinstance(obj, (np.integer, np.int64)):
-                            return int(obj)
-                        elif isinstance(obj, (np.floating, np.float64)):
-                            return float(obj)
-                        elif pd.isna(obj):
-                            return None
-                        return obj
-                    
-                    # Apply conversion to all values in df_dict
-                    df_dict_cleaned = []
-                    for row in df_dict:
-                        cleaned_row = {k: convert_to_json_serializable(v) for k, v in row.items()}
-                        df_dict_cleaned.append(cleaned_row)
-                    
-                    cache_data["df_dict"] = df_dict_cleaned
+                    # Reuse data_json (already converted above)
+                    cache_data["df_dict"] = data_json
                     cache_data["df_columns"] = list(df.columns)
                 except Exception as df_error:
                     log_warning(f"⚠️  Could not serialize DataFrame: {df_error}")
