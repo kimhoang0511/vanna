@@ -492,12 +492,22 @@ def main():
                 rows_count = 0
                 print(f"⚠️  Query returned no data")
             
-            # Save to cache
-            custom_cache.set_multiple(cache_id, {
+            # Save to cache (convert DataFrame to dict for JSON serialization)
+            cache_data = {
                 "question": question,
-                "sql": sql,
-                "df": df
-            })
+                "sql": sql
+            }
+            
+            # Only save df if it's not None and can be serialized
+            if df is not None:
+                try:
+                    # Convert DataFrame to dict (orient='records' is JSON-friendly)
+                    cache_data["df_dict"] = df.to_dict(orient='records')
+                    cache_data["df_columns"] = list(df.columns)
+                except Exception as df_error:
+                    print(f"⚠️  Could not serialize DataFrame: {df_error}")
+            
+            custom_cache.set_multiple(cache_id, cache_data)
             
             # Step 3: Generate chart if data is suitable
             chart_json = None
